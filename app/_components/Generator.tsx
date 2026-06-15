@@ -2,14 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TEAMS } from "@/src/teams";
-import type {
-  DealType,
-  PlayerDetail,
-  PlayerSearchResult,
-  ReturnPlayer,
-} from "@/src/types";
-
-const MAX_RETURN_PLAYERS = 3;
+import type { DealType, PlayerDetail, PlayerSearchResult } from "@/src/types";
 
 export default function Generator() {
   // Search state
@@ -26,11 +19,9 @@ export default function Generator() {
   const [dealType, setDealType] = useState<DealType>("SIGNING");
   const [dealText, setDealText] = useState("");
 
-  // Optional return players (trades only)
-  const [returnPlayers, setReturnPlayers] = useState<ReturnPlayer[]>([]);
-  const [returnQuery, setReturnQuery] = useState("");
-  const [returnResults, setReturnResults] = useState<PlayerSearchResult[]>([]);
-  const [showReturnResults, setShowReturnResults] = useState(false);
+  // Photo options
+  const [photoMode, setPhotoMode] = useState<"action" | "headshot">("action");
+  const [customPhotoUrl, setCustomPhotoUrl] = useState("");
 
   // Output state
   const [pngUrl, setPngUrl] = useState<string | null>(null);
@@ -38,10 +29,18 @@ export default function Generator() {
   const [error, setError] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set when a player is picked, so the resulting query change doesn't re-open
+  // the dropdown with a fresh search.
+  const skipSearchRef = useRef(false);
 
   // Debounced player search.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (skipSearchRef.current) {
+      skipSearchRef.current = false;
+      setShowResults(false);
+      return;
+    }
     if (query.trim().length < 2) {
       setResults([]);
       return;
@@ -66,6 +65,7 @@ export default function Generator() {
 
   const selectPlayer = useCallback(async (r: PlayerSearchResult) => {
     setShowResults(false);
+    skipSearchRef.current = true;
     setQuery(r.fullName);
     setError(null);
     setPngUrl(null);
@@ -87,57 +87,6 @@ export default function Generator() {
     }
   }, []);
 
-  const returnDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Debounced search for return players.
-  useEffect(() => {
-    if (returnDebounceRef.current) clearTimeout(returnDebounceRef.current);
-    if (returnQuery.trim().length < 2) {
-      setReturnResults([]);
-      return;
-    }
-    returnDebounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(returnQuery)}`);
-        const data = await res.json();
-        setReturnResults(data.results ?? []);
-        setShowReturnResults(true);
-      } catch {
-        setReturnResults([]);
-      }
-    }, 250);
-    return () => {
-      if (returnDebounceRef.current) clearTimeout(returnDebounceRef.current);
-    };
-  }, [returnQuery]);
-
-  const addReturnPlayer = useCallback(
-    async (r: PlayerSearchResult) => {
-      setShowReturnResults(false);
-      setReturnQuery("");
-      if (returnPlayers.length >= MAX_RETURN_PLAYERS) return;
-      // Fetch the headshot; fall back to name-only if it fails.
-      let headshotUrl: string | null = null;
-      try {
-        const res = await fetch(`/api/player/${r.id}`);
-        const data = await res.json();
-        headshotUrl = data.player?.headshotUrl ?? null;
-      } catch {
-        headshotUrl = null;
-      }
-      setReturnPlayers((prev) =>
-        prev.some((p) => p.name === r.fullName)
-          ? prev
-          : [...prev, { name: r.fullName, headshotUrl }],
-      );
-    },
-    [returnPlayers],
-  );
-
-  const removeReturnPlayer = useCallback((idx: number) => {
-    setReturnPlayers((prev) => prev.filter((_, i) => i !== idx));
-  }, []);
-
   const canGenerate =
     !!player &&
     !!newTeam &&
@@ -149,7 +98,7 @@ export default function Generator() {
     setRendering(true);
     setError(null);
     try {
-      const res = await fetch("/api/render", {
+      const res = await fetch("/api/render-poster", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -159,7 +108,8 @@ export default function Generator() {
           newTeamAbbr: newTeam,
           dealText,
           dealType,
-          returnPlayers: dealType === "TRADE" ? returnPlayers : [],
+          photo: photoMode,
+          photoUrl: customPhotoUrl.trim() || null,
         }),
       });
       if (!res.ok) {
@@ -174,10 +124,10 @@ export default function Generator() {
     } finally {
       setRendering(false);
     }
-  }, [player, oldTeam, newTeam, dealText, dealType, returnPlayers, pngUrl]);
+  }, [player, oldTeam, newTeam, dealText, dealType, photoMode, customPhotoUrl, pngUrl]);
 
   const downloadName = player
-    ? `${player.fullName.replace(/\s+/g, "-").toLowerCase()}-${oldTeam}-${newTeam}.png`
+    ? `${player.fullName.replace(/\s+/g, "-").toLowerCase()}-${newTeam}.png`
     : "nhl-graphic.png";
 
   return (
@@ -200,7 +150,10 @@ export default function Generator() {
               <div
                 key={r.id}
                 className="result"
-                onClick={() => selectPlayer(r)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectPlayer(r);
+                }}
               >
                 <span>{r.fullName}</span>
                 <span className="meta">
@@ -211,6 +164,32 @@ export default function Generator() {
             ))}
           </div>
         )}
+
+        <label>Photo</label>
+        <div className="toggle">
+          <button
+            type="button"
+            className={photoMode === "action" ? "active" : ""}
+            onClick={() => setPhotoMode("action")}
+          >
+            Action shot
+          </button>
+          <button
+            type="button"
+            className={photoMode === "headshot" ? "active" : ""}
+            onClick={() => setPhotoMode("headshot")}
+          >
+            Headshot
+          </button>
+        </div>
+        <label htmlFor="customPhoto">Custom image URL (optional)</label>
+        <input
+          id="customPhoto"
+          placeholder="Paste an image URL to override the photo…"
+          value={customPhotoUrl}
+          autoComplete="off"
+          onChange={(e) => setCustomPhotoUrl(e.target.value)}
+        />
 
         <label>Type</label>
         <div className="toggle">
@@ -269,62 +248,6 @@ export default function Generator() {
           ))}
         </select>
 
-        {dealType === "TRADE" && (
-          <>
-            <label htmlFor="returnSearch">
-              Players in return (optional)
-            </label>
-            {returnPlayers.length > 0 && (
-              <div className="chips">
-                {returnPlayers.map((rp, i) => (
-                  <span key={`${rp.name}-${i}`} className="chip">
-                    {rp.headshotUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={rp.headshotUrl} alt="" className="chip-img" />
-                    )}
-                    {rp.name}
-                    <button
-                      type="button"
-                      className="chip-x"
-                      aria-label={`Remove ${rp.name}`}
-                      onClick={() => removeReturnPlayer(i)}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            {returnPlayers.length < MAX_RETURN_PLAYERS && (
-              <input
-                id="returnSearch"
-                placeholder="Search a player coming back…"
-                value={returnQuery}
-                autoComplete="off"
-                onChange={(e) => setReturnQuery(e.target.value)}
-                onFocus={() => returnResults.length && setShowReturnResults(true)}
-              />
-            )}
-            {showReturnResults && returnResults.length > 0 && (
-              <div className="results">
-                {returnResults.map((r) => (
-                  <div
-                    key={r.id}
-                    className="result"
-                    onClick={() => addReturnPlayer(r)}
-                  >
-                    <span>{r.fullName}</span>
-                    <span className="meta">
-                      {r.teamAbbr ?? r.lastTeamAbbr ?? "FA"}
-                      {r.positionCode ? ` · ${r.positionCode}` : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
         <label htmlFor="dealText">Deal details</label>
         <textarea
           id="dealText"
@@ -356,7 +279,7 @@ export default function Generator() {
           </>
         ) : (
           <div className="empty">
-            Your 1080×1080 graphic will appear here after you generate it.
+            Your 1080×1350 graphic will appear here after you generate it.
           </div>
         )}
       </div>

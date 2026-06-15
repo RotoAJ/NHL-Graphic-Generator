@@ -38,24 +38,27 @@ Open <http://localhost:3000>.
   `api-web.nhle.com/v1/player/{id}/landing` for current team + headshot. All access is
   behind the `PlayerDataSource` interface (`src/datasource/`) so a RotoWire internal feed
   can be swapped in later without touching the UI or render code.
-- **Render:** `src/render/index.ts` composes a 1080×1080 PNG with `@napi-rs/canvas`.
-- **Routes:** `GET /api/search`, `GET /api/player/[id]`, `POST /api/render`.
+- **Render:** `src/render/poster.ts` composes a 1080×1350 portrait "poster" PNG with
+  `@napi-rs/canvas` — full-bleed action shot (falls back to a feathered headshot), team-color
+  gradient theming, a big team-colored headline (`TRADED` / `SIGNED`), corner team logos, and
+  the RotoWire logo at the bottom.
+- **Routes:** `GET /api/search`, `GET /api/player/[id]`, `POST /api/render-poster`.
 
 ## Project layout
 
 ```
 app/
   page.tsx                  single-page UI
-  _components/Generator.tsx  search + form + preview + download
+  _components/Generator.tsx  search + form + photo toggle + preview + download
   api/search/route.ts
   api/player/[id]/route.ts
-  api/render/route.ts
+  api/render-poster/route.ts
 src/
   types.ts                  shared domain types
-  teams.ts                  32 NHL teams (abbr, name, color)
+  teams.ts                  32 NHL teams (abbr, name, nickname, color)
   datasource/types.ts       PlayerDataSource interface
   datasource/nhl.ts         NHL public API implementation
-  render/index.ts           canvas composition -> PNG
+  render/poster.ts          canvas composition -> 1080x1350 PNG
   render/fonts.ts           font registration
 scripts/
   download-logos.ts
