@@ -9,7 +9,9 @@ import type { RenderRequest } from "@/src/types";
 const SIZE = 1080;
 const BG = "#0F0F11";
 const PURPLE = "#A020FE";
+const LEMON = "#D9FC07"; // accent for highlights (team abbr, "IN RETURN")
 const WHITE = "#FFFFFF";
+const LABEL = "#E8E8EE"; // legible near-white for secondary text
 const MUTED = "#9A9AA5";
 
 // Font family helpers (fall back to generic families if not registered).
@@ -169,6 +171,29 @@ function measureTracked(ctx: SKRSContext2D, text: string, spacing: number): numb
   return widths.reduce((a, b) => a + b, 0) + spacing * (chars.length - 1);
 }
 
+/** Draw centered, letter-spaced text where segments can have different colors. */
+function drawCenteredSegmentsTracked(
+  ctx: SKRSContext2D,
+  segments: Array<{ text: string; color: string }>,
+  cx: number,
+  y: number,
+  spacing: number,
+) {
+  const chars: Array<{ ch: string; color: string }> = [];
+  for (const s of segments) {
+    for (const ch of [...s.text]) chars.push({ ch, color: s.color });
+  }
+  const widths = chars.map((c) => ctx.measureText(c.ch).width);
+  const total = widths.reduce((a, b) => a + b, 0) + spacing * (chars.length - 1);
+  ctx.textAlign = "left";
+  let x = cx - total / 2;
+  for (let i = 0; i < chars.length; i++) {
+    ctx.fillStyle = chars[i].color;
+    ctx.fillText(chars[i].ch, x, y);
+    x += widths[i] + spacing;
+  }
+}
+
 /** Draw centered text with manual letter-spacing (for the block-letter tag). */
 function drawCenteredTracked(
   ctx: SKRSContext2D,
@@ -206,21 +231,31 @@ export async function renderGraphic(req: RenderRequest): Promise<Buffer> {
   const wordmark = await loadBrandWordmark();
 
   // --- Headline: "TRADED TO <ABBR>" / "SIGNS WITH <ABBR>" ---
+  // Verb phrase in white; team abbreviation in the lemonade accent so it pops.
   const newAbbr = (req.newTeamAbbr ?? "").toUpperCase();
-  const tag = (req.dealType === "TRADE" ? `TRADED TO ${newAbbr}` : `SIGNS WITH ${newAbbr}`).trim();
-  ctx.fillStyle = WHITE;
+  const prefix = req.dealType === "TRADE" ? "TRADED TO " : "SIGNS WITH ";
+  const headline = prefix + newAbbr;
   ctx.textBaseline = "alphabetic";
-  // Auto-fit the headline to one line (long nicknames shrink the font).
+  // Auto-fit the headline to one line (long abbreviations shrink the font).
   let tagSize = 96;
   let tagSpacing = 8;
   const tagMaxW = SIZE - 90;
   for (;;) {
     ctx.font = `${tagSize}px ${HEAVY}`;
     tagSpacing = Math.max(2, Math.round(tagSize * 0.08));
-    if (measureTracked(ctx, tag, tagSpacing) <= tagMaxW || tagSize <= 44) break;
+    if (measureTracked(ctx, headline, tagSpacing) <= tagMaxW || tagSize <= 44) break;
     tagSize -= 3;
   }
-  drawCenteredTracked(ctx, tag, SIZE / 2, 178, tagSpacing);
+  drawCenteredSegmentsTracked(
+    ctx,
+    [
+      { text: prefix, color: WHITE },
+      { text: newAbbr, color: LEMON },
+    ],
+    SIZE / 2,
+    178,
+    tagSpacing,
+  );
 
   // Return players (trades only) drive a more compact layout.
   const returns = req.dealType === "TRADE" ? (req.returnPlayers ?? []).slice(0, 3) : [];
@@ -292,20 +327,22 @@ export async function renderGraphic(req: RenderRequest): Promise<Buffer> {
       s -= 1;
       ctx.font = `${s}px ${MONO}`;
     }
-    ctx.fillStyle = MUTED;
+    ctx.fillStyle = LABEL;
     ctx.textAlign = "center";
-    ctx.fillText(full, cx, bandY + logoMax / 2 + 42);
+    // Extra air between the logo and its name (more in the roomier non-return layout).
+    ctx.fillText(full, cx, bandY + logoMax / 2 + (hasReturns ? 44 : 58));
   };
 
   if (req.dealType === "TRADE") {
-    const oldX = SIZE / 2 - 230;
-    const newX = SIZE / 2 + 230;
+    // Push the two teams further apart so long full names don't crowd the center.
+    const oldX = SIZE / 2 - 250;
+    const newX = SIZE / 2 + 250;
     const [oldLogo, newLogo] = await Promise.all([
       loadLogo(req.oldTeamAbbr),
       loadLogo(req.newTeamAbbr),
     ]);
-    drawTeam(oldLogo, req.oldTeamAbbr, oldX, 400);
-    drawTeam(newLogo, req.newTeamAbbr, newX, 400);
+    drawTeam(oldLogo, req.oldTeamAbbr, oldX, 380);
+    drawTeam(newLogo, req.newTeamAbbr, newX, 380);
 
     // Arrow between teams.
     ctx.strokeStyle = WHITE;
@@ -333,7 +370,7 @@ export async function renderGraphic(req: RenderRequest): Promise<Buffer> {
   let dealStartY = bandY + logoMax / 2 + 120;
   if (hasReturns) {
     const labelY = bandY + logoMax / 2 + 84;
-    ctx.fillStyle = PURPLE;
+    ctx.fillStyle = LEMON;
     ctx.font = `30px ${MONO}`;
     ctx.textBaseline = "alphabetic";
     drawCenteredTracked(ctx, "IN RETURN", SIZE / 2, labelY, 6);
@@ -362,7 +399,7 @@ export async function renderGraphic(req: RenderRequest): Promise<Buffer> {
     const lineH = hasReturns ? 40 : 50;
     // Leave room for the centered logo at the bottom.
     const maxLines = hasReturns ? 1 : 2;
-    ctx.fillStyle = hasReturns ? MUTED : WHITE;
+    ctx.fillStyle = WHITE;
     ctx.font = `${fontPx}px ${MONO}`;
     ctx.textAlign = "center";
     const maxW = SIZE - 160;
