@@ -27,7 +27,18 @@ interface NhlLanding {
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, {
-    headers: { Accept: "application/json" },
+    // Browser-like headers: the NHL search host (search.d3.nhle.com) returns 503
+    // to bare server requests (e.g. from Vercel). A realistic UA + Referer gets
+    // through; harmless for the other NHL hosts.
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      "Accept-Language": "en-US,en;q=0.9",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      Referer: "https://www.nhl.com/",
+      Origin: "https://www.nhl.com",
+    },
     // NHL data changes slowly; let Next cache briefly to stay responsive.
     next: { revalidate: 300 },
   });
