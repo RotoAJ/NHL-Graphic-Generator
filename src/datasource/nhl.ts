@@ -28,6 +28,19 @@ interface RosterResponse {
   goalies?: RosterPlayer[];
 }
 
+// Shape of the api-web club-stats payload (everyone who has appeared this
+// season — broader than the active roster, so call-ups/depth players show up).
+interface ClubStatsPlayer {
+  playerId: number;
+  firstName?: { default?: string };
+  lastName?: { default?: string };
+  positionCode?: string;
+}
+interface ClubStatsResponse {
+  skaters?: ClubStatsPlayer[];
+  goalies?: ClubStatsPlayer[];
+}
+
 // Subset of the NHL player "landing" payload we rely on.
 interface NhlLanding {
   playerId: number;
@@ -73,28 +86,58 @@ async function buildRosterIndex(): Promise<PlayerSearchResult[]> {
   if (rosterCache && now - rosterCacheAt < ROSTER_TTL_MS) return rosterCache;
   const lists = await Promise.all(
     TEAMS.map(async (t) => {
-      try {
-        const r = await fetchJson<RosterResponse>(
-          `${API_BASE}/v1/roster/${t.abbr}/current`,
-        );
-        const players = [
-          ...(r.forwards ?? []),
-          ...(r.defensemen ?? []),
-          ...(r.goalies ?? []),
-        ];
-        return players.map((p) => ({
-          id: String(p.id),
-          fullName: `${p.firstName?.default ?? ""} ${p.lastName?.default ?? ""}`.trim(),
+      const byId = new Map<string, PlayerSearchResult>();
+      const add = (
+        id: number | string,
+        first: string | undefined,
+        last: string | undefined,
+        pos: string | null,
+      ) => {
+        const key = String(id);
+        const fullName = `${first ?? ""} ${last ?? ""}`.trim();
+        if (!fullName || byId.has(key)) return;
+        byId.set(key, {
+          id: key,
+          fullName,
           teamAbbr: t.abbr,
           lastTeamAbbr: t.abbr,
-          positionCode: p.positionCode ?? null,
-        }));
-      } catch {
-        return [] as PlayerSearchResult[];
+          positionCode: pos,
+        });
+      };
+      // Active roster + everyone who has played this season (club-stats).
+      const [roster, stats] = await Promise.allSettled([
+        fetchJson<RosterResponse>(`${API_BASE}/v1/roster/${t.abbr}/current`),
+        fetchJson<ClubStatsResponse>(`${API_BASE}/v1/club-stats/${t.abbr}/now`),
+      ]);
+      if (roster.status === "fulfilled") {
+        const r = roster.value;
+        for (const p of [...(r.forwards ?? []), ...(r.defensemen ?? [])]) {
+          add(p.id, p.firstName?.default, p.lastName?.default, p.positionCode ?? null);
+        }
+        for (const p of r.goalies ?? []) {
+          add(p.id, p.firstName?.default, p.lastName?.default, p.positionCode ?? "G");
+        }
       }
+      if (stats.status === "fulfilled") {
+        const s = stats.value;
+        for (const p of s.skaters ?? []) {
+          add(p.playerId, p.firstName?.default, p.lastName?.default, p.positionCode ?? null);
+        }
+        for (const p of s.goalies ?? []) {
+          add(p.playerId, p.firstName?.default, p.lastName?.default, p.positionCode ?? "G");
+        }
+      }
+      return [...byId.values()];
     }),
   );
-  const flat = lists.flat();
+  // Flatten and dedupe across teams (a mid-season trade can list a player twice).
+  const seen = new Set<string>();
+  const flat: PlayerSearchResult[] = [];
+  for (const p of lists.flat()) {
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    flat.push(p);
+  }
   // Only cache a successful (non-empty) build.
   if (flat.length) {
     rosterCache = flat;
