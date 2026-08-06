@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import SiteNav from "./_components/SiteNav";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "RotoWire NHL Graphic Generator",
-  description: "Generate branded NHL trade/signing graphics.",
+  title: "RotoWire NHL Social Hub",
+  description: "Branded NHL social graphics: trades/signings and goalie matchups.",
 };
 
 export default function RootLayout({
@@ -13,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SiteNav />
+        {children}
+      </body>
     </html>
   );
 }
