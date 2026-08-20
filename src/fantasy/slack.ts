@@ -32,9 +32,34 @@ async function call<T>(method: string, body: unknown): Promise<T> {
   return json;
 }
 
+let resolvedChannel: string | null = null;
+
+/**
+ * Accepts either a channel id (`C…`) or a user id (`U…`).
+ *
+ * For a user id we open the bot's DM with that person and use the resulting
+ * conversation id (`D…`). This matters for file uploads:
+ * files.completeUploadExternal needs a real conversation id, not a user id.
+ * Requires the `im:write` scope. Delivering by DM also avoids the /invite step
+ * that channel posting needs.
+ */
+async function targetChannel(): Promise<string> {
+  if (resolvedChannel) return resolvedChannel;
+  const { channel } = auth();
+  if (!channel.toUpperCase().startsWith("U")) {
+    resolvedChannel = channel;
+    return resolvedChannel;
+  }
+  const r = await call<{ channel: { id: string } }>("conversations.open", {
+    users: channel,
+  });
+  resolvedChannel = r.channel.id;
+  return resolvedChannel;
+}
+
 /** Post a text message; returns the thread timestamp so files can be threaded. */
 export async function postMessage(text: string): Promise<string> {
-  const { channel } = auth();
+  const channel = await targetChannel();
   const r = await call<{ ts: string }>("chat.postMessage", {
     channel,
     text,
@@ -54,7 +79,8 @@ export async function uploadCard(
   title: string,
   threadTs?: string,
 ): Promise<void> {
-  const { token, channel } = auth();
+  const { token } = auth();
+  const channel = await targetChannel();
 
   // Step 1 -- reserve an upload URL. This endpoint takes form-encoded params.
   const params = new URLSearchParams({ filename, length: String(png.length) });
