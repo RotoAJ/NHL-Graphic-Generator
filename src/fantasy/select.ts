@@ -163,20 +163,30 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
   const starIds = new Set(starPick.picked.map((p) => p.playerId));
 
   // ---------- Sleepers: under-rostered, combined score ----------
-  const provider = opts.ownershipProvider ?? getOwnershipProvider();
+  const provider = opts.ownershipProvider ?? (await getOwnershipProvider());
   const sleeperPoolRaw = byFp
     .slice(0, SLEEPER_POOL)
     .filter((p) => passes(p) && !starIds.has(p.playerId));
 
   let ownershipMap = new Map<string, number>();
   try {
-    ownershipMap = await provider.get(sleeperPoolRaw.map((p) => p.playerId));
+    ownershipMap = await provider.get(
+      sleeperPoolRaw.map((p) => ({
+        playerId: p.playerId,
+        shortName: p.shortName,
+        teamAbbr: p.teamAbbr,
+      })),
+    );
   } catch (e) {
     warnings.push(`Ownership unavailable (${(e as Error).message}). Sleepers skipped.`);
   }
   if (!provider.isReal) {
     warnings.push(
       "Ownership figures are placeholders — connect Yahoo to use real % rostered.",
+    );
+  } else if (ownershipMap.size < sleeperPoolRaw.length / 2) {
+    warnings.push(
+      `Yahoo ownership matched only ${ownershipMap.size} of ${sleeperPoolRaw.length} candidates — some names may not have matched.`,
     );
   }
 

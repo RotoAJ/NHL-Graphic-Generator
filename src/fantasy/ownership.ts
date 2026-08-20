@@ -1,17 +1,25 @@
 // Ownership ("% rostered") provider.
 //
-// Behind an interface so the Yahoo implementation can drop in without touching
-// selection or rendering -- the same pattern as the trade tool's PlayerDataSource.
-//
-// Yahoo's league-wide `percent_owned` is the real source. Until OAuth credentials
-// exist we use a DETERMINISTIC stand-in so the tool is fully demoable and the same
-// player always gets the same number (a random stand-in would reshuffle the
-// Sleepers list on every refresh, which would look like a bug).
+// Behind an interface so the Yahoo implementation drops in without touching
+// selection or rendering. Yahoo's league-wide `percent_owned` is the real source;
+// the fixture keeps the tool demoable before Yahoo is connected.
+import { fetchOwnershipByName, initialKey, isConnected, yahooConfigured } from "@/src/fantasy/yahoo";
+
+/**
+ * Candidates carry the box-score name because Yahoo returns names, not NHL ids.
+ * Matching is "first-initial + surname", the same approach the injury filter uses.
+ */
+export interface OwnershipCandidate {
+  playerId: string;
+  shortName: string;
+  teamAbbr: string;
+}
 
 export interface OwnershipProvider {
   readonly name: string;
   readonly isReal: boolean;
-  get(playerIds: string[]): Promise<Map<string, number>>;
+  /** Returns playerId -> percent owned. Missing entries simply aren't included. */
+  get(candidates: OwnershipCandidate[]): Promise<Map<string, number>>;
 }
 
 /** Stable hash -> 0..1 */
@@ -27,32 +35,35 @@ function hash01(s: string): number {
 export const fixtureOwnership: OwnershipProvider = {
   name: "fixture",
   isReal: false,
-  async get(playerIds) {
+  async get(candidates) {
     const m = new Map<string, number>();
-    for (const id of playerIds) {
-      // Spread across 2-98% so both the <50% filter and the >50% side are exercised.
-      m.set(id, Math.round(2 + hash01(id) * 96));
+    for (const c of candidates) {
+      // Deterministic so the Sleepers list doesn't reshuffle on every refresh.
+      m.set(c.playerId, Math.round(2 + hash01(c.playerId) * 96));
     }
     return m;
   },
 };
 
-/** Placeholder for the Yahoo implementation (PRD milestone 6). */
 export const yahooOwnership: OwnershipProvider = {
   name: "yahoo",
   isReal: true,
-  async get() {
-    throw new Error(
-      "Yahoo ownership not configured. Set YAHOO_CLIENT_ID / YAHOO_CLIENT_SECRET / " +
-        "YAHOO_REFRESH_TOKEN, or run with the fixture provider.",
-    );
+  async get(candidates) {
+    const byName = await fetchOwnershipByName();
+    const m = new Map<string, number>();
+    for (const c of candidates) {
+      const pct = byName.get(initialKey(c.shortName));
+      if (typeof pct === "number") m.set(c.playerId, pct);
+    }
+    return m;
   },
 };
 
-export function getOwnershipProvider(): OwnershipProvider {
-  const configured =
-    process.env.YAHOO_CLIENT_ID &&
-    process.env.YAHOO_CLIENT_SECRET &&
-    process.env.YAHOO_REFRESH_TOKEN;
-  return configured ? yahooOwnership : fixtureOwnership;
+/**
+ * Yahoo when it's both configured and connected; otherwise the fixture.
+ * Async because "connected" means a refresh token exists in the database.
+ */
+export async function getOwnershipProvider(): Promise<OwnershipProvider> {
+  if (yahooConfigured() && (await isConnected())) return yahooOwnership;
+  return fixtureOwnership;
 }
