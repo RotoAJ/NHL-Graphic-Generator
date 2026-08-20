@@ -18,6 +18,7 @@ type CardMap = Record<string, string>; // `${threadType}:${playerId}` -> blob ur
 export default function FantasyTool() {
   const [date, setDate] = useState("2026-03-15");
   const [ignoreRecency, setIgnoreRecency] = useState(false);
+  const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<GenerateResponse | null>(null);
   const [cards, setCards] = useState<CardMap>({});
@@ -58,6 +59,7 @@ export default function FantasyTool() {
     try {
       const qs = new URLSearchParams({ date });
       if (ignoreRecency) qs.set("ignoreRecency", "1");
+      if (preview) qs.set("preview", "1");
       const res = await fetch(`/api/fantasy/generate?${qs}`);
       const json = (await res.json()) as GenerateResponse;
       if (!res.ok) throw new Error(json.error ?? `Failed (${res.status})`);
@@ -68,7 +70,7 @@ export default function FantasyTool() {
     } finally {
       setLoading(false);
     }
-  }, [date, ignoreRecency, renderCards]);
+  }, [date, ignoreRecency, preview, renderCards]);
 
   const confirmSet = useCallback(async () => {
     if (!data) return;
@@ -146,6 +148,14 @@ export default function FantasyTool() {
               />
               <span>Ignore the 14-day repeat filter</span>
             </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={preview}
+                onChange={(e) => setPreview(e.target.checked)}
+              />
+              <span>Preview Sleepers with placeholder ownership (do not publish)</span>
+            </label>
           </div>
         </div>
         <button className="generate" disabled={loading} onClick={generate}>
@@ -169,7 +179,18 @@ export default function FantasyTool() {
 
           <div className="matchup-grid">
             <CopyBox title="Three Stars of the Week" text={data.threads.stars} />
-            <CopyBox title="Sleepers to Grab" text={data.threads.sleepers} />
+            {data.sleepers.length > 0 ? (
+              <CopyBox title="Sleepers to Grab" text={data.threads.sleepers} />
+            ) : (
+              <div className="panel">
+                <div className="side-title">Sleepers to Grab</div>
+                <div className="hint">
+                  Withheld until real ownership data is available (Yahoo Fantasy API access
+                  pending). Tick “Preview Sleepers” above to see the format with placeholder
+                  numbers — those are not publishable.
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="panel" style={{ marginTop: 20 }}>
@@ -177,10 +198,12 @@ export default function FantasyTool() {
             <CardGrid list={data.stars} type="stars" />
           </div>
 
-          <div className="panel" style={{ marginTop: 20 }}>
-            <div className="side-title">Sleepers — cards</div>
-            <CardGrid list={data.sleepers} type="sleepers" />
-          </div>
+          {data.sleepers.length > 0 && (
+            <div className="panel" style={{ marginTop: 20 }}>
+              <div className="side-title">Sleepers — cards</div>
+              <CardGrid list={data.sleepers} type="sleepers" />
+            </div>
+          )}
 
           <div className="panel" style={{ marginTop: 20 }}>
             <button type="button" className="copy-btn" onClick={confirmSet}>

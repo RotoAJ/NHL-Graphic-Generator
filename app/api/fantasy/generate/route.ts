@@ -15,13 +15,20 @@ export async function GET(req: Request) {
   const endDate = (url.searchParams.get("date") || todayISO()).trim();
   const ignoreRecency = url.searchParams.get("ignoreRecency") === "1";
   const minGames = Number(url.searchParams.get("minGames") || "1") || 1;
+  // ?preview=1 shows placeholder ownership so Sleeper cards can be reviewed.
+  const allowPlaceholderOwnership = url.searchParams.get("preview") === "1";
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
     return NextResponse.json({ error: "date must be YYYY-MM-DD" }, { status: 400 });
   }
 
   try {
-    const result = await selectPlayers({ endDate, ignoreRecency, minGames });
+    const result = await selectPlayers({
+      endDate,
+      ignoreRecency,
+      minGames,
+      allowPlaceholderOwnership,
+    });
     return NextResponse.json({
       window: result.window,
       warnings: result.warnings,

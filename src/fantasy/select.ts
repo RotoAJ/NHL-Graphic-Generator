@@ -1,7 +1,11 @@
 import { actionShotUrl, getPlayerDetail, getWeekProduction } from "@/src/fantasy/nhl";
 import { getInjuries } from "@/src/fantasy/injuries";
 import { getFeaturedStore, RECENCY_DAYS } from "@/src/fantasy/featured";
-import { getOwnershipProvider, type OwnershipProvider } from "@/src/fantasy/ownership";
+import {
+  fixtureOwnership,
+  getOwnershipProvider,
+  type OwnershipProvider,
+} from "@/src/fantasy/ownership";
 import { positionLabel } from "@/src/fantasy/scoring";
 import type { Finalist, PlayerWeek, PosGroup, SelectionResult } from "@/src/fantasy/types";
 
@@ -104,6 +108,12 @@ export interface SelectOptions {
   /** Skip the "featured recently" filter (useful when experimenting). */
   ignoreRecency?: boolean;
   ownershipProvider?: OwnershipProvider;
+  /**
+   * Opt in to placeholder ownership for previewing what Sleeper cards look like.
+   * OFF by default: without real Yahoo data the Sleepers set is withheld rather
+   * than published with invented percentages.
+   */
+  allowPlaceholderOwnership?: boolean;
 }
 
 export async function selectPlayers(opts: SelectOptions): Promise<SelectionResult> {
@@ -163,14 +173,29 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
   const starIds = new Set(starPick.picked.map((p) => p.playerId));
 
   // ---------- Sleepers: under-rostered, combined score ----------
-  const provider = opts.ownershipProvider ?? (await getOwnershipProvider());
+  let provider: OwnershipProvider | null = opts.ownershipProvider ?? null;
+  if (!provider) {
+    const auto = await getOwnershipProvider();
+    provider = auto.isReal
+      ? auto
+      : opts.allowPlaceholderOwnership
+        ? fixtureOwnership
+        : null;
+  }
   const sleeperPoolRaw = byFp
     .slice(0, SLEEPER_POOL)
     .filter((p) => passes(p) && !starIds.has(p.playerId));
 
   let ownershipMap = new Map<string, number>();
+  if (!provider) {
+    // Sleepers are withheld until real ownership data exists -- publishing a
+    // fabricated "% rostered" under the RotoWire brand is not acceptable.
+    warnings.push(
+      "Sleepers withheld — real ownership data is unavailable (Yahoo Fantasy API access is pending approval). Three Stars is unaffected.",
+    );
+  }
   try {
-    ownershipMap = await provider.get(
+    if (provider) ownershipMap = await provider.get(
       sleeperPoolRaw.map((p) => ({
         playerId: p.playerId,
         shortName: p.shortName,
@@ -180,11 +205,11 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
   } catch (e) {
     warnings.push(`Ownership unavailable (${(e as Error).message}). Sleepers skipped.`);
   }
-  if (!provider.isReal) {
+  if (provider && !provider.isReal) {
     warnings.push(
-      "Ownership figures are placeholders — connect Yahoo to use real % rostered.",
+      "Ownership figures are PLACEHOLDERS (preview mode) — do not publish these numbers.",
     );
-  } else if (ownershipMap.size < sleeperPoolRaw.length / 2) {
+  } else if (provider && ownershipMap.size < sleeperPoolRaw.length / 2) {
     warnings.push(
       `Yahoo ownership matched only ${ownershipMap.size} of ${sleeperPoolRaw.length} candidates — some names may not have matched.`,
     );
