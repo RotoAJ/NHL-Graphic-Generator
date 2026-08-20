@@ -15,6 +15,13 @@ export interface InjuryInfo {
   /** Normalized keys of day-to-day players (eligible, but worth flagging). */
   dayToDay: Set<string>;
   available: boolean;
+  /**
+   * Why the filter is unavailable, when it is. Distinguishing these matters:
+   * a missing key and a blocked request need completely different fixes, and
+   * lumping them together sent me chasing the wrong cause once already.
+   */
+  reason: "ok" | "no-key" | "http-error" | "fetch-error" | "empty-parse";
+  detail?: string;
 }
 
 export function normalizeName(first: string, last: string): string {
@@ -34,22 +41,35 @@ export function normalizeName(first: string, last: string): string {
  */
 export async function getInjuries(): Promise<InjuryInfo> {
   const key = process.env.ROTOWIRE_API_KEY;
-  const empty: InjuryInfo = {
+  const fail = (
+    reason: InjuryInfo["reason"],
+    detail?: string,
+  ): InjuryInfo => ({
     unavailable: new Set(),
     dayToDay: new Set(),
     available: false,
-  };
-  if (!key) return empty;
+    reason,
+    detail,
+  });
+  if (!key) return fail("no-key");
 
   let xml: string;
   try {
     const res = await fetch(`${BASE}/Injuries.php?key=${encodeURIComponent(key)}`, {
+      // Browser-like headers: some sports hosts 503 bare server requests from
+      // datacenter IPs (the NHL search host does exactly that).
+      headers: {
+        Accept: "application/xml, text/xml, */*",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      },
       next: { revalidate: 1800 },
     });
-    if (!res.ok) return empty;
+    if (!res.ok) return fail("http-error", `HTTP ${res.status}`);
     xml = await res.text();
-  } catch {
-    return empty;
+  } catch (e) {
+    return fail("fetch-error", (e as Error).message);
   }
 
   const unavailable = new Set<string>();
@@ -64,5 +84,12 @@ export async function getInjuries(): Promise<InjuryInfo> {
     if (UNAVAILABLE.has(status.toUpperCase())) unavailable.add(key2);
     else if (status.toUpperCase() === "DAY-TO-DAY") dayToDay.add(key2);
   }
-  return { unavailable, dayToDay, available: unavailable.size > 0 || dayToDay.size > 0 };
+  const parsed = unavailable.size > 0 || dayToDay.size > 0;
+  return {
+    unavailable,
+    dayToDay,
+    available: parsed,
+    reason: parsed ? "ok" : "empty-parse",
+    detail: parsed ? undefined : `received ${xml.length} bytes but matched no players`,
+  };
 }

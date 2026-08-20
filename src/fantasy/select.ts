@@ -128,9 +128,11 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
   // --- filters that apply to both lists ---
   const injuries = await getInjuries();
   if (!injuries.available) {
-    warnings.push(
-      "Injury filter skipped — ROTOWIRE_API_KEY is not set, so injured players may appear.",
-    );
+    const why =
+      injuries.reason === "no-key"
+        ? "ROTOWIRE_API_KEY is not set"
+        : `injury feed ${injuries.reason}${injuries.detail ? ` (${injuries.detail})` : ""}`;
+    warnings.push(`Injury filter skipped — ${why}. Injured players may appear.`);
   }
   const store = getFeaturedStore();
   const recent = opts.ignoreRecency
