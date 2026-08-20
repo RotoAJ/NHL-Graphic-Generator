@@ -3,6 +3,7 @@ import { getFeaturedStore, makeRecord } from "@/src/fantasy/featured";
 import { selectPlayers } from "@/src/fantasy/select";
 import { postMessage, slackConfigured, uploadCard } from "@/src/fantasy/slack";
 import { sleepersThread, starsThread } from "@/src/fantasy/threads";
+import { saveWeek } from "@/src/fantasy/weeks";
 import { renderFantasyCard } from "@/src/render/card";
 import type { Finalist, ThreadType } from "@/src/fantasy/types";
 
@@ -78,11 +79,42 @@ export async function GET(req: Request) {
       });
     }
 
+    // Save the week and record the players BEFORE any Slack work. The permalink
+    // is the real deliverable and must not depend on Slack; recording here also
+    // means the 14-day filter still advances when Slack isn't configured at all
+    // (otherwise the same players would resurface every week).
+    const weekEnd = result.window.to;
+    const permalink = `/fantasy/week/${weekEnd}`;
+    const store = getFeaturedStore();
+
+    if (!dryRun) {
+      await saveWeek({
+        weekEnd,
+        window: result.window,
+        stars: result.stars,
+        sleepers: result.sleepers,
+        threads,
+        warnings: result.warnings,
+        createdAt: new Date().toISOString(),
+      });
+      await store.add([
+        ...result.stars.map((p) => makeRecord(p.playerId, p.fullName, p.position, "stars")),
+        ...result.sleepers.map((p) =>
+          makeRecord(p.playerId, p.fullName, p.position, "sleepers"),
+        ),
+      ]);
+    }
+
     if (dryRun || !slackConfigured()) {
       return NextResponse.json({
         posted: false,
-        dryRun: true,
+        dryRun,
+        saved: !dryRun,
+        recorded: dryRun ? 0 : result.stars.length + result.sleepers.length,
+        permalink,
         slackConfigured: slackConfigured(),
+        store: store.name,
+        persistent: store.persistent,
         window: result.window,
         warnings: result.warnings,
         threads,
@@ -117,17 +149,10 @@ export async function GET(req: Request) {
       }
     }
 
-    // --- record so these players sit out the next 14 days ---
-    const store = getFeaturedStore();
-    await store.add([
-      ...result.stars.map((p) => makeRecord(p.playerId, p.fullName, p.position, "stars")),
-      ...result.sleepers.map((p) =>
-        makeRecord(p.playerId, p.fullName, p.position, "sleepers"),
-      ),
-    ]);
-
+    // (players were already recorded above, before the Slack work)
     return NextResponse.json({
       posted: true,
+      permalink,
       window: result.window,
       uploaded,
       store: store.name,

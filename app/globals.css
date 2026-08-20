@@ -405,3 +405,38 @@ textarea:focus {
   font-size: 13px;
   line-height: 1.6;
 }
+
+/* ---- saved weeks list ---- */
+.week-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.week-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.week-list li:last-child {
+  border-bottom: none;
+}
+
+.week-list a {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.week-list a:hover {
+  color: var(--purple);
+}
+
+.week-list .meta {
+  color: var(--muted);
+  font-size: 13px;
+}

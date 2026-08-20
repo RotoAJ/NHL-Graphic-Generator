@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import CopyBox from "@/app/_components/CopyBox";
 import type { Finalist, ThreadType } from "@/src/fantasy/types";
 
 interface GenerateResponse {
@@ -14,28 +15,6 @@ interface GenerateResponse {
 
 type CardMap = Record<string, string>; // `${threadType}:${playerId}` -> blob url
 
-function ThreadBox({ title, text }: { title: string; text: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setCopied(false);
-    }
-  };
-  return (
-    <div className="panel">
-      <div className="side-title">{title}</div>
-      <pre className="thread-text">{text}</pre>
-      <button type="button" className="copy-btn" onClick={copy}>
-        {copied ? "Copied ✓" : "Copy thread"}
-      </button>
-    </div>
-  );
-}
-
 export default function FantasyTool() {
   const [date, setDate] = useState("2026-03-15");
   const [ignoreRecency, setIgnoreRecency] = useState(false);
@@ -44,6 +23,7 @@ export default function FantasyTool() {
   const [cards, setCards] = useState<CardMap>({});
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [permalink, setPermalink] = useState<string | null>(null);
 
   const renderCards = useCallback(async (res: GenerateResponse) => {
     const jobs: Array<[ThreadType, Finalist]> = [
@@ -92,25 +72,24 @@ export default function FantasyTool() {
 
   const confirmSet = useCallback(async () => {
     if (!data) return;
-    const players = [
-      ...data.stars.map((p) => ({ ...p, threadType: "stars" as ThreadType })),
-      ...data.sleepers.map((p) => ({ ...p, threadType: "sleepers" as ThreadType })),
-    ].map((p) => ({
-      playerId: p.playerId,
-      fullName: p.fullName,
-      position: p.position,
-      threadType: p.threadType,
-    }));
     try {
-      const r = await fetch("/api/fantasy/featured", {
+      const r = await fetch("/api/fantasy/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ players }),
+        body: JSON.stringify({
+          weekEnd: data.window.to,
+          window: data.window,
+          stars: data.stars,
+          sleepers: data.sleepers,
+          threads: data.threads,
+          warnings: data.warnings,
+        }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "Failed to save");
+      setPermalink(j.permalink);
       setSaved(
-        `Recorded ${j.added} players — excluded from the next 14 days.` +
+        `Saved. ${j.recorded} players excluded for the next 14 days.` +
           (j.persistent ? "" : " (dev store: not persistent on Vercel)"),
       );
     } catch (e) {
@@ -189,8 +168,8 @@ export default function FantasyTool() {
           )}
 
           <div className="matchup-grid">
-            <ThreadBox title="Three Stars of the Week" text={data.threads.stars} />
-            <ThreadBox title="Sleepers to Grab" text={data.threads.sleepers} />
+            <CopyBox title="Three Stars of the Week" text={data.threads.stars} />
+            <CopyBox title="Sleepers to Grab" text={data.threads.sleepers} />
           </div>
 
           <div className="panel" style={{ marginTop: 20 }}>
@@ -205,9 +184,14 @@ export default function FantasyTool() {
 
           <div className="panel" style={{ marginTop: 20 }}>
             <button type="button" className="copy-btn" onClick={confirmSet}>
-              Confirm set — exclude these players for 14 days
+              Confirm set — save permalink + exclude for 14 days
             </button>
             {saved && <div className="hint" style={{ marginTop: 10 }}>{saved}</div>}
+            {permalink && (
+              <a className="download" href={permalink} style={{ marginTop: 12 }}>
+                Open this week&apos;s permalink
+              </a>
+            )}
           </div>
         </>
       )}
