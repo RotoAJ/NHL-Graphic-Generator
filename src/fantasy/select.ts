@@ -6,7 +6,16 @@ import { positionLabel } from "@/src/fantasy/scoring";
 import type { Finalist, PlayerWeek, PosGroup, SelectionResult } from "@/src/fantasy/types";
 
 export const OWNERSHIP_CEILING = 50; // "under-rostered" threshold
-const MAX_PER_GROUP = 2; // diversity: max 2 of F / D / G per set of 3
+
+/**
+ * Diversity caps per set of 3.
+ *
+ * Goalies are capped at 1: save-volume scoring means goalies structurally
+ * out-earn skaters over a week, so an uncapped list reliably returned two
+ * goalies in the top three (observed with real 2025-26 data). One goalie keeps
+ * the post readable as a skater story.
+ */
+const MAX_PER_GROUP: Record<PosGroup, number> = { F: 2, D: 2, G: 1 };
 const PICK = 3;
 const TOP_POOL = 15; // spec: top 15 by fantasy points feeds the Stars pick
 const SLEEPER_POOL = 60; // wider pool to score under-rostered candidates from
@@ -40,22 +49,29 @@ function normalize(v: number, min: number, max: number): number {
 function pickWithDiversity(
   candidates: PlayerWeek[],
   n = PICK,
-  maxPerGroup = MAX_PER_GROUP,
+  caps: Record<PosGroup, number> = MAX_PER_GROUP,
 ): { picked: PlayerWeek[]; relaxed: boolean } {
   const counts: Record<PosGroup, number> = { F: 0, D: 0, G: 0 };
   const picked: PlayerWeek[] = [];
   for (const c of candidates) {
     if (picked.length === n) break;
-    if (counts[c.posGroup] >= maxPerGroup) continue;
+    if (counts[c.posGroup] >= caps[c.posGroup]) continue;
     picked.push(c);
     counts[c.posGroup]++;
   }
   let relaxed = false;
   if (picked.length < n) {
     relaxed = true;
-    for (const c of candidates) {
+    // Relax the F/D caps first; only add a second goalie as a last resort, so
+    // "relaxed" never silently undoes the one-goalie rule.
+    for (const pass of [0, 1] as const) {
+      for (const c of candidates) {
+        if (picked.length === n) break;
+        if (picked.includes(c)) continue;
+        if (pass === 0 && c.posGroup === "G") continue;
+        picked.push(c);
+      }
       if (picked.length === n) break;
-      if (!picked.includes(c)) picked.push(c);
     }
   }
   return { picked, relaxed };
