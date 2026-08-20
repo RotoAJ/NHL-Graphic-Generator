@@ -12,6 +12,7 @@ import { usePathname } from "next/navigation";
  */
 const TOOLS: Array<{ href: string; label: string }> = [
   { href: "/", label: "Trade / Signing" },
+  { href: "/fantasy", label: "Fantasy Hockey" },
 ];
 
 export default function SiteNav() {
