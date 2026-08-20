@@ -60,6 +60,27 @@ function teamLogoPath(abbr: string): string | null {
   return null;
 }
 
+/**
+ * Draw an image at its natural aspect ratio, scaled to fit inside maxW x maxH
+ * and centred on (cx, cy).
+ *
+ * NHL team logos rasterize to 400x267 (1.5:1), so drawing them into a square
+ * box compressed every one of them horizontally by a third.
+ */
+function drawContain(
+  ctx: SKRSContext2D,
+  img: Image,
+  cx: number,
+  cy: number,
+  maxW: number,
+  maxH: number,
+) {
+  const scale = Math.min(maxW / img.width, maxH / img.height);
+  const w = img.width * scale;
+  const h = img.height * scale;
+  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+}
+
 function fitText(
   ctx: SKRSContext2D,
   text: string,
@@ -199,9 +220,18 @@ export async function renderFantasyCard(
   if (lp) {
     const logo = await loadLocal(lp);
     if (logo) {
+      const TILE = 176;
       ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fillRect(PAD, 50, 176, 176);
-      ctx.drawImage(logo as Image, PAD + 23, 73, 130, 130);
+      ctx.fillRect(PAD, 50, TILE, TILE);
+      // Aspect-preserving fit inside the tile, with a little breathing room.
+      drawContain(
+        ctx,
+        logo as Image,
+        PAD + TILE / 2,
+        50 + TILE / 2,
+        TILE - 28,
+        TILE - 44,
+      );
     }
   }
 
