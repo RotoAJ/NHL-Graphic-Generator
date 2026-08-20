@@ -15,7 +15,15 @@ on:
         type: boolean
         default: true
       dryRun:
-        description: "Build everything but do not post to Slack"
+        description: "Build everything but save nothing (safe test)"
+        type: boolean
+        default: false
+      date:
+        description: "Week-ending date YYYY-MM-DD (blank = yesterday). Use an in-season date to test off-season."
+        type: string
+        default: ""
+      ignoreRecency:
+        description: "Ignore the 14-day repeat filter (useful when re-testing)"
         type: boolean
         default: false
 
@@ -33,8 +41,10 @@ jobs:
             exit 1
           fi
           QS=""
-          if [ "${{ inputs.force }}" = "true" ];  then QS="${QS}&force=1";  fi
-          if [ "${{ inputs.dryRun }}" = "true" ]; then QS="${QS}&dryRun=1"; fi
+          if [ "${{ inputs.force }}" = "true" ];         then QS="${QS}&force=1";         fi
+          if [ "${{ inputs.dryRun }}" = "true" ];        then QS="${QS}&dryRun=1";        fi
+          if [ "${{ inputs.ignoreRecency }}" = "true" ]; then QS="${QS}&ignoreRecency=1"; fi
+          if [ -n "${{ inputs.date }}" ];                then QS="${QS}&date=${{ inputs.date }}"; fi
 
           echo "Calling ${APP_URL}/api/cron/fantasy-weekly"
           CODE=$(curl -sS -m 300 -o response.json -w '%{http_code}' \

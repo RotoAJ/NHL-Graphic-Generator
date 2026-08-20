@@ -41,6 +41,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const force = url.searchParams.get("force") === "1";
   const dryRun = url.searchParams.get("dryRun") === "1";
+  const ignoreRecency = url.searchParams.get("ignoreRecency") === "1";
 
   // --- auth: shared secret, sent as a header or query param ---
   const secret = process.env.CRON_SECRET;
@@ -67,7 +68,7 @@ export async function GET(req: Request) {
   const endDate = url.searchParams.get("date") ?? windowEndDate();
 
   try {
-    const result = await selectPlayers({ endDate });
+    const result = await selectPlayers({ endDate, ignoreRecency });
     const threads = { stars: starsThread(result), sleepers: sleepersThread(result) };
 
     if (!result.stars.length && !result.sleepers.length) {
