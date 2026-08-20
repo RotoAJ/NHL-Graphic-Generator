@@ -1,0 +1,50 @@
+name: Fantasy Hockey weekly post
+
+# Mondays. Cron here is UTC, so we fire at both 12:00 and 13:00 UTC: one of those
+# is 08:00 America/New_York depending on daylight saving (EDT vs EST). The endpoint
+# itself only acts when it is genuinely 08:00 Eastern, so the other firing is a
+# no-op. Without this, a single fixed UTC time silently drifts to 7am in November.
+on:
+  schedule:
+    - cron: "0 12 * * 1"   # 08:00 ET while EDT (Mar-Nov)
+    - cron: "0 13 * * 1"   # 08:00 ET while EST (Nov-Mar)
+  workflow_dispatch:        # lets you run it by hand from the Actions tab
+    inputs:
+      force:
+        description: "Ignore the 8am-Eastern check"
+        type: boolean
+        default: true
+      dryRun:
+        description: "Build everything but do not post to Slack"
+        type: boolean
+        default: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly fantasy post
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::APP_URL and CRON_SECRET repository secrets must be set."
+            exit 1
+          fi
+          QS=""
+          if [ "${{ inputs.force }}" = "true" ];  then QS="${QS}&force=1";  fi
+          if [ "${{ inputs.dryRun }}" = "true" ]; then QS="${QS}&dryRun=1"; fi
+
+          echo "Calling ${APP_URL}/api/cron/fantasy-weekly"
+          CODE=$(curl -sS -m 300 -o response.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/fantasy-weekly?ts=$(date +%s)${QS}")
+
+          echo "HTTP ${CODE}"
+          cat response.json; echo
+          # A skipped run (wrong hour) is a success, not a failure.
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Weekly post failed with HTTP ${CODE}"
+            exit 1
+          fi

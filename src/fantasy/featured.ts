@@ -8,6 +8,7 @@
 // the PRD calls for Postgres. The interface is identical, so the swap is contained.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { hasDatabase, postgresStore } from "@/src/fantasy/db";
 import type { FeaturedRecord, ThreadType } from "@/src/fantasy/types";
 
 export const RECENCY_DAYS = 14;
@@ -56,9 +57,13 @@ export const fileStore: FeaturedStore = {
   },
 };
 
+/**
+ * Postgres when a database is attached (DATABASE_URL / POSTGRES_URL), otherwise
+ * the dev file store. Importing the Neon driver is harmless without a database --
+ * it only fails on connect, which we never attempt when unconfigured.
+ */
 export function getFeaturedStore(): FeaturedStore {
-  // Postgres implementation lands in milestone 5; until then, dev file store.
-  return fileStore;
+  return hasDatabase() ? postgresStore : fileStore;
 }
 
 export function makeRecord(
