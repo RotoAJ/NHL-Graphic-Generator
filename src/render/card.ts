@@ -82,23 +82,59 @@ function drawContain(
 }
 
 /**
- * Choose the horizontal crop offset for a landscape action shot.
+ * Is this a rink photo? Rink shots contain a large bright, desaturated region
+ * (the ice); studio/promo portraits do not.
  *
- * Only the ON-ICE band (34%-96% of height) is scored: crowds sit above the
- * boards, and including them dragged the window toward spectators. Columns score
- * for saturation and darkness against bright ice.
- *
- * The content window is used only when it beats the centre by a wide margin.
- * Measured ratios at the current zoom: 1.50 for a genuinely broken framing
- * (McMann, whose subject sat outside the centre window) versus 1.00-1.21 for
- * photos that were already fine -- including a posed studio portrait on a
- * saturated red backdrop, which an earlier, greedier version panned straight
- * into the background. Anything below the threshold stays centred.
+ * This matters because the two cases need opposite handling. A studio portrait
+ * is centred by construction and must never be panned -- Sean Walker's promo
+ * shot on a saturated red backdrop scored 1.31 on subject-detection and would
+ * have been panned into pure background. Measured ice coverage separates them
+ * cleanly: 1.4% for that portrait versus 34-85% for every rink photo sampled.
  */
-const CROP_MARGIN = 1.35;
+function isRinkPhoto(img: Image): boolean {
+  try {
+    const dw = 120;
+    const dh = Math.max(1, Math.round((img.height * dw) / img.width));
+    const tmp = createCanvas(dw, dh);
+    const t = tmp.getContext("2d");
+    t.drawImage(img, 0, 0, dw, dh);
+    const d = t.getImageData(0, 0, dw, dh).data;
+    let ice = 0;
+    let total = 0;
+    for (let y = Math.floor(dh * 0.35); y < dh; y++) {
+      for (let x = 0; x < dw; x++) {
+        const i = (y * dw + x) * 4;
+        const r = d[i];
+        const g = d[i + 1];
+        const bl = d[i + 2];
+        const sat = (Math.max(r, g, bl) - Math.min(r, g, bl)) / 255;
+        const lum = (0.299 * r + 0.587 * g + 0.114 * bl) / 255;
+        if (lum > 0.68 && sat < 0.16) ice++;
+        total++;
+      }
+    }
+    return total > 0 && ice / total >= 0.12;
+  } catch {
+    return false; // unknown -> treat as studio, i.e. don't pan
+  }
+}
+
+/**
+ * Horizontal crop offset for a landscape action shot.
+ *
+ * The panel is tall and narrow, so only a slice of a 1296px-wide photo is shown
+ * and a fixed centre silently failed whenever the subject was off to one side
+ * (Bobby McMann rendered as empty ice; Mark Scheifele lost his head out of frame).
+ *
+ * Scoring uses only the ON-ICE band (34%-96% of height): including the top pulled
+ * the window toward crowd faces, and a skin-tone detector failed for the same
+ * reason -- the stands are full of faces. Studio photos skip panning entirely.
+ */
+const CROP_MARGIN = 1.12;
 
 function bestCropX(img: Image, cropW: number): number {
   const centreX = Math.round((img.width - cropW) / 2);
+  if (!isRinkPhoto(img)) return centreX;
   try {
     const dw = 160;
     const dh = Math.max(1, Math.round((img.height * dw) / img.width));
@@ -111,29 +147,29 @@ function bestCropX(img: Image, cropW: number): number {
     const yStart = Math.floor(dh * 0.34);
     const yEnd = Math.floor(dh * 0.96);
     for (let x = 0; x < dw; x++) {
-      let s2 = 0;
+      let sc = 0;
       for (let y = yStart; y < yEnd; y++) {
         const i = (y * dw + x) * 4;
         const r = d[i];
         const g = d[i + 1];
-        const b = d[i + 2];
-        const sat = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
-        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        s2 += sat * 0.9 + Math.max(0, 0.68 - lum) * 1.1;
+        const bl = d[i + 2];
+        const sat = (Math.max(r, g, bl) - Math.min(r, g, bl)) / 255;
+        const lum = (0.299 * r + 0.587 * g + 0.114 * bl) / 255;
+        sc += sat * 0.9 + Math.max(0, 0.68 - lum) * 1.1;
       }
-      col[x] = s2;
+      col[x] = sc;
     }
     const sm = col.map((_, i) => {
-      let a = 0;
+      let acc = 0;
       let n = 0;
       for (let k = -6; k <= 6; k++) {
         const j = i + k;
         if (j >= 0 && j < dw) {
-          a += col[j];
+          acc += col[j];
           n++;
         }
       }
-      return a / n;
+      return acc / n;
     });
 
     const win = Math.max(1, Math.round((cropW * dw) / img.width));
@@ -157,7 +193,7 @@ function bestCropX(img: Image, cropW: number): number {
       return Math.round((best * img.width) / dw);
     }
   } catch {
-    // fall through to the centre crop
+    /* fall through */
   }
   return centreX;
 }
@@ -226,31 +262,21 @@ export async function renderFantasyCard(
   }
 
   if (photo) {
-    // The photo covers the TOP portion of the panel rather than the whole
-    // height. Filling the full 600x1500 panel meant magnifying a 1296x729 photo
-    // 2.06x and showing only 22% of its width, which wrecked any wide shot (a
-    // player small in frame became a torso close-up) and left no margin for a
-    // subject that wasn't dead centre. At 62% height the zoom is ~1.28x and 36%
-    // of the width is visible, so far less can go wrong; the bottom fades into
-    // the panel gradient, which the layout already darkened anyway.
-    const PHOTO_H = Math.round(H * 0.62);
-
     if (isHeadshot) {
       // A head-and-shoulders mug can't fill a tall panel; sit it lower-centre.
       const iw = PW * 1.15;
       const ih = iw * (photo.height / photo.width);
       ctx.drawImage(photo, SPLIT + (PW - iw) / 2, H * 0.52 - ih / 2, iw, ih);
     } else {
-      const scale = Math.max(PW / photo.width, PHOTO_H / photo.height);
-      const sw = Math.min(photo.width, Math.round(PW / scale));
-      const sh = Math.min(photo.height, Math.round(PHOTO_H / scale));
+      // Full bleed: cover the whole panel, panning horizontally to the subject.
+      const tr = PW / H;
+      const sw = Math.min(photo.width, Math.round(photo.height * tr));
       const sx = bestCropX(photo, sw);
-      ctx.drawImage(photo, sx, 0, sw, sh, SPLIT, 0, PW, PHOTO_H);
+      ctx.drawImage(photo, sx, 0, sw, photo.height, SPLIT, 0, PW, H);
     }
 
     // brightness lift ("bright" setting from the design review)
-    const liftH = isHeadshot ? H : PHOTO_H;
-    const d = ctx.getImageData(SPLIT, 0, PW, liftH);
+    const d = ctx.getImageData(SPLIT, 0, PW, H);
     const px = d.data;
     for (let i = 0; i < px.length; i += 4) {
       px[i] = Math.min(255, px[i] * GRADE.gain + GRADE.lift);
@@ -259,30 +285,22 @@ export async function renderFantasyCard(
     }
     ctx.putImageData(d, SPLIT, 0);
 
-    // gentle brand tint
     ctx.globalAlpha = GRADE.tint;
     ctx.fillStyle = NAVY;
-    ctx.fillRect(SPLIT, 0, PW, liftH);
+    ctx.fillRect(SPLIT, 0, PW, H);
     ctx.globalAlpha = 1;
 
-    // falloff at the split keeps the white text legible
     const edge = ctx.createLinearGradient(SPLIT, 0, SPLIT + 200, 0);
     edge.addColorStop(0, `rgba(10,18,32,${GRADE.edge})`);
     edge.addColorStop(1, "rgba(10,18,32,0)");
     ctx.fillStyle = edge;
     ctx.fillRect(SPLIT, 0, 200, H);
 
-    // blend the bottom of the photo into the panel
-    const fadeTop = Math.max(0, liftH - 300);
-    const fade = ctx.createLinearGradient(0, fadeTop, 0, liftH);
-    fade.addColorStop(0, "rgba(0,34,72,0)");
-    fade.addColorStop(1, NAVY);
-    ctx.fillStyle = fade;
-    ctx.fillRect(SPLIT, fadeTop, PW, liftH - fadeTop);
-    if (liftH < H) {
-      ctx.fillStyle = NAVY;
-      ctx.fillRect(SPLIT, liftH, PW, H - liftH);
-    }
+    const bot = ctx.createLinearGradient(0, H - 300, 0, H);
+    bot.addColorStop(0, "rgba(10,18,32,0)");
+    bot.addColorStop(1, `rgba(10,18,32,${GRADE.bottom})`);
+    ctx.fillStyle = bot;
+    ctx.fillRect(SPLIT, H - 300, PW, 300);
   } else {
     ctx.fillStyle = "rgba(255,255,255,0.35)";
     ctx.font = `34px ${BOLD}`;
