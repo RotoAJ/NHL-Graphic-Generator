@@ -1,28 +1,29 @@
 import type { PlayerWeek, PosGroup } from "@/src/fantasy/types";
 
 /**
- * Fantasy scoring weights.
+ * Fantasy scoring weights — standard Yahoo NHL points league, supplied by AJ.
  *
- * PLACEHOLDER VALUES. These should be replaced by the real category weights from
- * Yahoo league 67213's settings once OAuth is wired up (see PRD §5) -- that is the
- * whole reason we read the league. Until then these are a defensible standard
- * points-league approximation, kept in one place so the swap is a single edit.
+ * Note there is deliberately NO hits category: an earlier placeholder scored
+ * hits, which inflated grinders relative to how this league actually scores.
+ *
+ * PPP is power-play POINTS (goals + assists), not power-play goals. Box scores
+ * only expose powerPlayGoals, so PPP starts as an approximation and is refined
+ * from per-player game logs for the shortlist (see nhl.ts refinePowerPlayPoints).
  */
 export const SKATER_WEIGHTS = {
-  goals: 3,
-  assists: 2,
-  sog: 0.4,
-  blocks: 0.4,
-  hits: 0.3,
-  ppGoals: 0.5,
-  plusMinus: 0.3,
+  goals: 6,
+  assists: 4,
+  plusMinus: 2,
+  ppPoints: 2,
+  sog: 0.9,
+  blocks: 1,
 } as const;
 
 export const GOALIE_WEIGHTS = {
-  wins: 4,
-  saves: 0.3,
-  goalsAgainst: -1.5,
-  shutouts: 3,
+  wins: 5,
+  goalsAgainst: -3,
+  saves: 0.6,
+  shutouts: 5,
 } as const;
 
 export function positionGroup(position: string): PosGroup {
@@ -67,10 +68,9 @@ export function fantasyPoints(p: Omit<PlayerWeek, "fantasyPoints">): number {
   return (
     p.goals * s.goals +
     p.assists * s.assists +
+    p.plusMinus * s.plusMinus +
+    p.ppPoints * s.ppPoints +
     p.sog * s.sog +
-    p.blocks * s.blocks +
-    p.hits * s.hits +
-    p.ppGoals * s.ppGoals +
-    p.plusMinus * s.plusMinus
+    p.blocks * s.blocks
   );
 }

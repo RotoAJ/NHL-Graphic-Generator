@@ -159,6 +159,8 @@ export async function getWeekProduction(endDate: string): Promise<{
     hits: 0,
     blocks: 0,
     ppGoals: 0,
+    ppPoints: 0,
+    ppExact: false,
     plusMinus: 0,
     wins: 0,
     saves: 0,
@@ -190,6 +192,8 @@ export async function getWeekProduction(endDate: string): Promise<{
         rec.hits += s.hits ?? 0;
         rec.blocks += s.blockedShots ?? 0;
         rec.ppGoals += s.powerPlayGoals ?? 0;
+        // Box scores expose no PP assists, so start from PP goals and refine later.
+        rec.ppPoints = rec.ppGoals;
         rec.plusMinus += s.plusMinus ?? 0;
         rec.toiSeconds += toiSeconds(s.toi);
         rec.teamAbbr = abbr || rec.teamAbbr;
@@ -253,4 +257,56 @@ export async function getPlayerDetail(playerId: string): Promise<{
 /** NHL action-shot URL (may 404; the renderer falls back). */
 export function actionShotUrl(playerId: string): string {
   return `https://assets.nhle.com/mugs/actionshots/1296x729/${playerId}.jpg`;
+}
+
+
+interface SkaterLogEntry {
+  gameDate: string;
+  powerPlayPoints?: number;
+}
+interface SkaterLog {
+  gameLog?: SkaterLogEntry[];
+}
+
+/** Season id (e.g. 20252026) that contains the given date. */
+export function seasonForDate(iso: string): number {
+  const [y, m] = iso.split("-").map(Number);
+  const start = m >= 9 ? y : y - 1;
+  return Number(`${start}${start + 1}`);
+}
+
+/**
+ * Replace the PP-goals approximation with true power-play POINTS for the given
+ * players, read from their game logs.
+ *
+ * Only worth doing for a shortlist: it costs one request per player. In this
+ * league a power-play assist is worth 6 (4 assist + 2 PPP), so leaving it
+ * approximated would misrank playmakers.
+ */
+export async function refinePowerPlayPoints(
+  players: PlayerWeek[],
+  window: { from: string; to: string },
+): Promise<void> {
+  const season = seasonForDate(window.to);
+  const skaters = players.filter((p) => p.posGroup !== "G");
+  await pool(skaters, 8, async (p) => {
+    try {
+      const log = await getJson<SkaterLog>(
+        `/v1/player/${p.playerId}/game-log/${season}/2`,
+        86400,
+      );
+      let ppp = 0;
+      for (const g of log.gameLog ?? []) {
+        if (g.gameDate >= window.from && g.gameDate <= window.to) {
+          ppp += g.powerPlayPoints ?? 0;
+        }
+      }
+      p.ppPoints = ppp;
+      p.ppExact = true;
+      p.fantasyPoints = fantasyPoints(p);
+    } catch {
+      // keep the approximation
+    }
+    return null;
+  });
 }

@@ -1,4 +1,9 @@
-import { actionShotUrl, getPlayerDetail, getWeekProduction } from "@/src/fantasy/nhl";
+import {
+  actionShotUrl,
+  getPlayerDetail,
+  getWeekProduction,
+  refinePowerPlayPoints,
+} from "@/src/fantasy/nhl";
 import { getInjuries } from "@/src/fantasy/injuries";
 import { getFeaturedStore, RECENCY_DAYS } from "@/src/fantasy/featured";
 import {
@@ -23,6 +28,7 @@ const MAX_PER_GROUP: Record<PosGroup, number> = { F: 2, D: 2, G: 1 };
 const PICK = 3;
 const TOP_POOL = 15; // spec: top 15 by fantasy points feeds the Stars pick
 const SLEEPER_POOL = 60; // wider pool to score under-rostered candidates from
+const REFINE_POOL = 90; // players whose PP points are looked up exactly
 
 /** "B. Brink" -> "b brink"; also built from ("Brandon","Brink"). */
 function initialKey(shortName: string): string {
@@ -156,6 +162,15 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
 
   const passes = (p: PlayerWeek) =>
     !injuries.unavailable.has(initialKey(p.shortName)) && !recent.has(p.playerId);
+
+  // Box scores carry no PP assists, so the first ranking uses PP goals as a
+  // stand-in. Refine the plausible contenders with true power-play points from
+  // their game logs, then re-rank -- a PP assist is worth 6 in this league
+  // (4 assist + 2 PPP), so leaving it approximated would misorder playmakers.
+  const shortlist = [...eligible]
+    .sort((a, b) => b.fantasyPoints - a.fantasyPoints)
+    .slice(0, REFINE_POOL);
+  await refinePowerPlayPoints(shortlist, window);
 
   const byFp = [...eligible].sort((a, b) => b.fantasyPoints - a.fantasyPoints);
 

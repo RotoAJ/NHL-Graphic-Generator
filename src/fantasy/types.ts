@@ -19,6 +19,10 @@ export interface PlayerWeek {
   hits: number;
   blocks: number;
   ppGoals: number;
+  /** Power-play POINTS (goals + assists). Approximated by ppGoals until refined. */
+  ppPoints: number;
+  /** True once ppPoints came from the player's game log rather than the estimate. */
+  ppExact: boolean;
   plusMinus: number;
   // goalie
   wins: number;
