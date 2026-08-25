@@ -82,59 +82,56 @@ function drawContain(
 }
 
 /**
- * Is this a rink photo? Rink shots contain a large bright, desaturated region
- * (the ice); studio/promo portraits do not.
+ * Horizontal crop offset for a full-bleed action shot.
  *
- * This matters because the two cases need opposite handling. A studio portrait
- * is centred by construction and must never be panned -- Sean Walker's promo
- * shot on a saturated red backdrop scored 1.31 on subject-detection and would
- * have been panned into pure background. Measured ice coverage separates them
- * cleanly: 1.4% for that portrait versus 34-85% for every rink photo sampled.
+ * The panel is tall and narrow, so only ~22% of a 1296px-wide photo is shown and
+ * a fixed centre failed whenever the subject sat to one side (Bobby McMann
+ * rendered as empty ice; Mark Scheifele lost his head out of frame).
+ *
+ * The trigger is deliberately "is the centre window mostly EMPTY ICE?" rather
+ * than "is some other window better". Earlier attempts scored which window had
+ * the most subject-like content and panned to it; that repeatedly damaged cards
+ * that were already fine, because the score finds a player's body mass and a
+ * player bent forward has their head off to one side of it (Cale Makar lost his
+ * head that way). Measured centre densities: 29.6% and 39.6% for the two broken
+ * framings versus 44-95% for every good one, so a low absolute threshold only
+ * ever rescues genuinely empty crops and leaves everything else untouched.
+ *
+ * Studio/promo portraits are excluded entirely -- they are centred by
+ * construction, and one on a saturated backdrop fooled an earlier heuristic into
+ * panning to pure background.
  */
-function isRinkPhoto(img: Image): boolean {
-  try {
-    const dw = 120;
-    const dh = Math.max(1, Math.round((img.height * dw) / img.width));
-    const tmp = createCanvas(dw, dh);
-    const t = tmp.getContext("2d");
-    t.drawImage(img, 0, 0, dw, dh);
-    const d = t.getImageData(0, 0, dw, dh).data;
-    let ice = 0;
-    let total = 0;
-    for (let y = Math.floor(dh * 0.35); y < dh; y++) {
-      for (let x = 0; x < dw; x++) {
-        const i = (y * dw + x) * 4;
-        const r = d[i];
-        const g = d[i + 1];
-        const bl = d[i + 2];
-        const sat = (Math.max(r, g, bl) - Math.min(r, g, bl)) / 255;
-        const lum = (0.299 * r + 0.587 * g + 0.114 * bl) / 255;
-        if (lum > 0.68 && sat < 0.16) ice++;
-        total++;
-      }
-    }
-    return total > 0 && ice / total >= 0.12;
-  } catch {
-    return false; // unknown -> treat as studio, i.e. don't pan
-  }
-}
+const MIN_CENTRE_DENSITY = 0.42;
 
-/**
- * Horizontal crop offset for a landscape action shot.
- *
- * The panel is tall and narrow, so only a slice of a 1296px-wide photo is shown
- * and a fixed centre silently failed whenever the subject was off to one side
- * (Bobby McMann rendered as empty ice; Mark Scheifele lost his head out of frame).
- *
- * Scoring uses only the ON-ICE band (34%-96% of height): including the top pulled
- * the window toward crowd faces, and a skin-tone detector failed for the same
- * reason -- the stands are full of faces. Studio photos skip panning entirely.
- */
-const CROP_MARGIN = 1.12;
+/** Fraction of the window that is NOT ice (i.e. player, boards, crowd). */
+function densityAt(
+  data: Uint8ClampedArray,
+  dw: number,
+  dh: number,
+  x0: number,
+  x1: number,
+): number {
+  const yStart = Math.floor(dh * 0.3);
+  const yEnd = Math.floor(dh * 0.97);
+  let hit = 0;
+  let total = 0;
+  for (let y = yStart; y < yEnd; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * dw + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const sat = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+      const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      if (sat > 0.2 || lum < 0.42) hit++;
+      total++;
+    }
+  }
+  return total ? hit / total : 1;
+}
 
 function bestCropX(img: Image, cropW: number): number {
   const centreX = Math.round((img.width - cropW) / 2);
-  if (!isRinkPhoto(img)) return centreX;
   try {
     const dw = 160;
     const dh = Math.max(1, Math.round((img.height * dw) / img.width));
@@ -143,59 +140,41 @@ function bestCropX(img: Image, cropW: number): number {
     t.drawImage(img, 0, 0, dw, dh);
     const d = t.getImageData(0, 0, dw, dh).data;
 
-    const col = new Array<number>(dw).fill(0);
-    const yStart = Math.floor(dh * 0.34);
-    const yEnd = Math.floor(dh * 0.96);
-    for (let x = 0; x < dw; x++) {
-      let sc = 0;
-      for (let y = yStart; y < yEnd; y++) {
+    // Studio/promo shot? Rink photos carry a large bright, desaturated ice area.
+    let ice = 0;
+    let iceTotal = 0;
+    for (let y = Math.floor(dh * 0.35); y < dh; y++) {
+      for (let x = 0; x < dw; x++) {
         const i = (y * dw + x) * 4;
-        const r = d[i];
-        const g = d[i + 1];
-        const bl = d[i + 2];
-        const sat = (Math.max(r, g, bl) - Math.min(r, g, bl)) / 255;
-        const lum = (0.299 * r + 0.587 * g + 0.114 * bl) / 255;
-        sc += sat * 0.9 + Math.max(0, 0.68 - lum) * 1.1;
+        const sat =
+          (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2])) / 255;
+        const lum = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+        if (lum > 0.68 && sat < 0.16) ice++;
+        iceTotal++;
       }
-      col[x] = sc;
     }
-    const sm = col.map((_, i) => {
-      let acc = 0;
-      let n = 0;
-      for (let k = -6; k <= 6; k++) {
-        const j = i + k;
-        if (j >= 0 && j < dw) {
-          acc += col[j];
-          n++;
-        }
-      }
-      return acc / n;
-    });
+    if (!iceTotal || ice / iceTotal < 0.12) return centreX;
 
     const win = Math.max(1, Math.round((cropW * dw) / img.width));
-    const sumAt = (start: number) => {
-      let v = 0;
-      for (let i = start; i < start + win; i++) v += sm[i];
-      return v;
-    };
     const centreStart = Math.round((dw - win) / 2);
-    const centreScore = sumAt(centreStart);
+    if (densityAt(d, dw, dh, centreStart, centreStart + win) >= MIN_CENTRE_DENSITY) {
+      return centreX; // centre already contains the player -- leave it alone
+    }
+
+    // Centre is mostly ice: slide to wherever the subject actually is.
     let best = centreStart;
-    let bestScore = -1;
+    let bestDensity = -1;
     for (let st = 0; st + win <= dw; st++) {
-      const v = sumAt(st);
-      if (v > bestScore) {
-        bestScore = v;
+      const v = densityAt(d, dw, dh, st, st + win);
+      if (v > bestDensity) {
+        bestDensity = v;
         best = st;
       }
     }
-    if (centreScore > 0 && bestScore / centreScore >= CROP_MARGIN) {
-      return Math.round((best * img.width) / dw);
-    }
+    return Math.round((best * img.width) / dw);
   } catch {
-    /* fall through */
+    return centreX;
   }
-  return centreX;
 }
 
 function fitText(
