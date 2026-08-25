@@ -1,0 +1,21 @@
+{
+    "fantasy_content": {
+        "xml:lang": "en-US",
+        "yahoo:uri": "\/fantasy\/v2\/game\/nhl",
+        "game": {
+            "game_key": "477",
+            "game_id": "477",
+            "name": "Hockey",
+            "code": "nhl",
+            "type": "full",
+            "url": "https:\/\/hockey.fantasysports.yahoo.com\/hockey",
+            "season": "2026",
+            "is_registration_over": 0,
+            "is_game_over": 0,
+            "is_offseason": 0
+        },
+        "@time": "6.0539245605469ms",
+        "@copyright": "Certain Data by Sportradar, Stats Perform and Rotowire",
+        "@refresh_rate": "30"
+    }
+}

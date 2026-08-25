@@ -3,7 +3,16 @@
 // Behind an interface so the Yahoo implementation drops in without touching
 // selection or rendering. Yahoo's league-wide `percent_owned` is the real source;
 // the fixture keeps the tool demoable before Yahoo is connected.
-import { fetchOwnershipByName, initialKey, isConnected, yahooConfigured } from "@/src/fantasy/yahoo";
+import {
+  fetchOwnershipByName as fetchOAuthOwnership,
+  initialKey as oauthInitialKey,
+  isConnected,
+  yahooConfigured,
+} from "@/src/fantasy/yahoo";
+import {
+  fetchOwnershipByName as fetchPublicOwnership,
+  initialKey,
+} from "@/src/fantasy/yahooPublic";
 
 /**
  * Candidates carry the box-score name because Yahoo returns names, not NHL ids.
@@ -45,11 +54,15 @@ export const fixtureOwnership: OwnershipProvider = {
   },
 };
 
-export const yahooOwnership: OwnershipProvider = {
-  name: "yahoo",
+/**
+ * PRIMARY provider: Yahoo's public read-only host. Needs no OAuth, no developer
+ * app and no approval, and returns the same league-wide percent_owned.
+ */
+export const yahooPublicOwnership: OwnershipProvider = {
+  name: "yahoo-public",
   isReal: true,
   async get(candidates) {
-    const byName = await fetchOwnershipByName();
+    const byName = await fetchPublicOwnership();
     const m = new Map<string, number>();
     for (const c of candidates) {
       const pct = byName.get(initialKey(c.shortName));
@@ -59,11 +72,29 @@ export const yahooOwnership: OwnershipProvider = {
   },
 };
 
+/** OAuth variant, kept as a fallback if the public host ever changes. */
+export const yahooOwnership: OwnershipProvider = {
+  name: "yahoo-oauth",
+  isReal: true,
+  async get(candidates) {
+    const byName = await fetchOAuthOwnership();
+    const m = new Map<string, number>();
+    for (const c of candidates) {
+      const pct = byName.get(oauthInitialKey(c.shortName));
+      if (typeof pct === "number") m.set(c.playerId, pct);
+    }
+    return m;
+  },
+};
+
 /**
- * Yahoo when it's both configured and connected; otherwise the fixture.
- * Async because "connected" means a refresh token exists in the database.
+ * The public host is the default because it needs no setup at all. The OAuth
+ * path is only preferred when explicitly configured AND connected, in case we
+ * ever want league-specific figures instead of league-wide.
  */
 export async function getOwnershipProvider(): Promise<OwnershipProvider> {
-  if (yahooConfigured() && (await isConnected())) return yahooOwnership;
-  return fixtureOwnership;
+  if (process.env.YAHOO_PREFER_OAUTH === "1" && yahooConfigured() && (await isConnected())) {
+    return yahooOwnership;
+  }
+  return yahooPublicOwnership;
 }
