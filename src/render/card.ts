@@ -84,20 +84,18 @@ function drawContain(
 /**
  * Choose the horizontal crop offset for a landscape action shot.
  *
- * The card's photo panel is tall and narrow, so we keep the full height and take
- * only a ~290px-wide slice of a 1296px-wide photo. Always taking the middle
- * silently failed whenever the player was off-centre: Bobby McMann's card
- * rendered empty ice because his head sat at x≈850 while the centre window was
- * x 502-794.
+ * Only the ON-ICE band (34%-96% of height) is scored: crowds sit above the
+ * boards, and including them dragged the window toward spectators. Columns score
+ * for saturation and darkness against bright ice.
  *
- * Columns are scored for "subject-ness" (saturation, and darkness relative to
- * bright ice), weighting the top half more heavily since heads live there.
- * The content window is only used when it beats the centre by a clear margin --
- * measured ratios were 1.46 for the broken McMann shot versus ~1.00-1.07 for
- * already-centred ones, so the threshold stays conservative and leaves good
- * photos untouched.
+ * The content window is used only when it beats the centre by a wide margin.
+ * Measured ratios at the current zoom: 1.50 for a genuinely broken framing
+ * (McMann, whose subject sat outside the centre window) versus 1.00-1.21 for
+ * photos that were already fine -- including a posed studio portrait on a
+ * saturated red backdrop, which an earlier, greedier version panned straight
+ * into the background. Anything below the threshold stays centred.
  */
-const CROP_MARGIN = 1.15;
+const CROP_MARGIN = 1.35;
 
 function bestCropX(img: Image, cropW: number): number {
   const centreX = Math.round((img.width - cropW) / 2);
@@ -110,10 +108,10 @@ function bestCropX(img: Image, cropW: number): number {
     const d = t.getImageData(0, 0, dw, dh).data;
 
     const col = new Array<number>(dw).fill(0);
-    const yStart = Math.floor(dh * 0.08);
-    const yEnd = Math.floor(dh * 0.92);
+    const yStart = Math.floor(dh * 0.34);
+    const yEnd = Math.floor(dh * 0.96);
     for (let x = 0; x < dw; x++) {
-      let s = 0;
+      let s2 = 0;
       for (let y = yStart; y < yEnd; y++) {
         const i = (y * dw + x) * 4;
         const r = d[i];
@@ -121,16 +119,14 @@ function bestCropX(img: Image, cropW: number): number {
         const b = d[i + 2];
         const sat = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
         const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        const weight = y / dh < 0.55 ? 2.0 : 0.8; // favour heads/upper bodies
-        s += (sat + Math.max(0, 0.72 - lum)) * weight;
+        s2 += sat * 0.9 + Math.max(0, 0.68 - lum) * 1.1;
       }
-      col[x] = s;
+      col[x] = s2;
     }
-    // smooth so a single bright column can't win
     const sm = col.map((_, i) => {
       let a = 0;
       let n = 0;
-      for (let k = -5; k <= 5; k++) {
+      for (let k = -6; k <= 6; k++) {
         const j = i + k;
         if (j >= 0 && j < dw) {
           a += col[j];
@@ -142,19 +138,19 @@ function bestCropX(img: Image, cropW: number): number {
 
     const win = Math.max(1, Math.round((cropW * dw) / img.width));
     const sumAt = (start: number) => {
-      let t2 = 0;
-      for (let i = start; i < start + win; i++) t2 += sm[i];
-      return t2;
+      let v = 0;
+      for (let i = start; i < start + win; i++) v += sm[i];
+      return v;
     };
     const centreStart = Math.round((dw - win) / 2);
     const centreScore = sumAt(centreStart);
     let best = centreStart;
     let bestScore = -1;
-    for (let s = 0; s + win <= dw; s++) {
-      const v = sumAt(s);
+    for (let st = 0; st + win <= dw; st++) {
+      const v = sumAt(st);
       if (v > bestScore) {
         bestScore = v;
-        best = s;
+        best = st;
       }
     }
     if (centreScore > 0 && bestScore / centreScore >= CROP_MARGIN) {
@@ -230,43 +226,43 @@ export async function renderFantasyCard(
   }
 
   if (photo) {
-    const ir = photo.width / photo.height;
-    const tr = PW / H;
-    let sw = photo.width;
-    let sh = photo.height;
-    let sx = 0;
-    let sy = 0;
-    if (ir > tr) {
-      sw = photo.height * tr;
-      // Content-aware rather than a fixed centre: see bestCropX.
-      sx = isHeadshot ? (photo.width - sw) / 2 : bestCropX(photo, sw);
-    } else {
-      sh = photo.width / tr;
-      sy = (photo.height - sh) * 0.15; // bias upward so heads stay in frame
-    }
+    // The photo covers the TOP portion of the panel rather than the whole
+    // height. Filling the full 600x1500 panel meant magnifying a 1296x729 photo
+    // 2.06x and showing only 22% of its width, which wrecked any wide shot (a
+    // player small in frame became a torso close-up) and left no margin for a
+    // subject that wasn't dead centre. At 62% height the zoom is ~1.28x and 36%
+    // of the width is visible, so far less can go wrong; the bottom fades into
+    // the panel gradient, which the layout already darkened anyway.
+    const PHOTO_H = Math.round(H * 0.62);
+
     if (isHeadshot) {
       // A head-and-shoulders mug can't fill a tall panel; sit it lower-centre.
       const iw = PW * 1.15;
       const ih = iw * (photo.height / photo.width);
       ctx.drawImage(photo, SPLIT + (PW - iw) / 2, H * 0.52 - ih / 2, iw, ih);
     } else {
-      ctx.drawImage(photo, sx, sy, sw, sh, SPLIT, 0, PW, H);
+      const scale = Math.max(PW / photo.width, PHOTO_H / photo.height);
+      const sw = Math.min(photo.width, Math.round(PW / scale));
+      const sh = Math.min(photo.height, Math.round(PHOTO_H / scale));
+      const sx = bestCropX(photo, sw);
+      ctx.drawImage(photo, sx, 0, sw, sh, SPLIT, 0, PW, PHOTO_H);
     }
 
-    // brightness lift
-    const d = ctx.getImageData(SPLIT, 0, PW, H);
-    const p = d.data;
-    for (let i = 0; i < p.length; i += 4) {
-      p[i] = Math.min(255, p[i] * GRADE.gain + GRADE.lift);
-      p[i + 1] = Math.min(255, p[i + 1] * GRADE.gain + GRADE.lift);
-      p[i + 2] = Math.min(255, p[i + 2] * GRADE.gain + GRADE.lift);
+    // brightness lift ("bright" setting from the design review)
+    const liftH = isHeadshot ? H : PHOTO_H;
+    const d = ctx.getImageData(SPLIT, 0, PW, liftH);
+    const px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      px[i] = Math.min(255, px[i] * GRADE.gain + GRADE.lift);
+      px[i + 1] = Math.min(255, px[i + 1] * GRADE.gain + GRADE.lift);
+      px[i + 2] = Math.min(255, px[i + 2] * GRADE.gain + GRADE.lift);
     }
     ctx.putImageData(d, SPLIT, 0);
 
     // gentle brand tint
     ctx.globalAlpha = GRADE.tint;
     ctx.fillStyle = NAVY;
-    ctx.fillRect(SPLIT, 0, PW, H);
+    ctx.fillRect(SPLIT, 0, PW, liftH);
     ctx.globalAlpha = 1;
 
     // falloff at the split keeps the white text legible
@@ -276,11 +272,17 @@ export async function renderFantasyCard(
     ctx.fillStyle = edge;
     ctx.fillRect(SPLIT, 0, 200, H);
 
-    const bot = ctx.createLinearGradient(0, H - 300, 0, H);
-    bot.addColorStop(0, "rgba(10,18,32,0)");
-    bot.addColorStop(1, `rgba(10,18,32,${GRADE.bottom})`);
-    ctx.fillStyle = bot;
-    ctx.fillRect(SPLIT, H - 300, PW, 300);
+    // blend the bottom of the photo into the panel
+    const fadeTop = Math.max(0, liftH - 300);
+    const fade = ctx.createLinearGradient(0, fadeTop, 0, liftH);
+    fade.addColorStop(0, "rgba(0,34,72,0)");
+    fade.addColorStop(1, NAVY);
+    ctx.fillStyle = fade;
+    ctx.fillRect(SPLIT, fadeTop, PW, liftH - fadeTop);
+    if (liftH < H) {
+      ctx.fillStyle = NAVY;
+      ctx.fillRect(SPLIT, liftH, PW, H - liftH);
+    }
   } else {
     ctx.fillStyle = "rgba(255,255,255,0.35)";
     ctx.font = `34px ${BOLD}`;
