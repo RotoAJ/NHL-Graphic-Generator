@@ -2,7 +2,7 @@ import {
   actionShotUrl,
   getPlayerDetail,
   getWeekProduction,
-  refinePowerPlayPoints,
+  refineExactStats,
 } from "@/src/fantasy/nhl";
 import { getInjuries } from "@/src/fantasy/injuries";
 import { getFeaturedStore, RECENCY_DAYS } from "@/src/fantasy/featured";
@@ -163,14 +163,14 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
   const passes = (p: PlayerWeek) =>
     !injuries.unavailable.has(initialKey(p.shortName)) && !recent.has(p.playerId);
 
-  // Box scores carry no PP assists, so the first ranking uses PP goals as a
-  // stand-in. Refine the plausible contenders with true power-play points from
-  // their game logs, then re-rank -- a PP assist is worth 6 in this league
-  // (4 assist + 2 PPP), so leaving it approximated would misorder playmakers.
+  // Box scores carry neither PP assists nor shutouts. Rank once using PP goals
+  // as a stand-in, then read exact power-play points (skaters) and shutouts
+  // (goalies) from the game logs of the plausible contenders and re-rank. Both
+  // matter here: a PP assist is worth 6 (4 assist + 2 PPP) and a shutout 5.
   const shortlist = [...eligible]
     .sort((a, b) => b.fantasyPoints - a.fantasyPoints)
     .slice(0, REFINE_POOL);
-  await refinePowerPlayPoints(shortlist, window);
+  await refineExactStats(shortlist, window);
 
   const byFp = [...eligible].sort((a, b) => b.fantasyPoints - a.fantasyPoints);
 

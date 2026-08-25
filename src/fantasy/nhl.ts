@@ -208,7 +208,8 @@ export async function getWeekProduction(endDate: string): Promise<{
         rec.saves += g.saves ?? 0;
         rec.goalsAgainst += g.goalsAgainst ?? 0;
         if (g.decision === "W") rec.wins += 1;
-        if ((g.goalsAgainst ?? 0) === 0 && toiSeconds(g.toi) >= 3000) rec.shutouts += 1;
+        // Shutouts are NOT in the box score; they are read exactly from the
+        // goalie's game log during the refinement pass (see refineExactStats).
         rec.toiSeconds += toiSeconds(g.toi);
         rec.teamAbbr = abbr || rec.teamAbbr;
         acc.set(id, rec);
@@ -260,12 +261,13 @@ export function actionShotUrl(playerId: string): string {
 }
 
 
-interface SkaterLogEntry {
+interface LogEntry {
   gameDate: string;
   powerPlayPoints?: number;
+  shutouts?: number;
 }
-interface SkaterLog {
-  gameLog?: SkaterLogEntry[];
+interface PlayerLog {
+  gameLog?: LogEntry[];
 }
 
 /** Season id (e.g. 20252026) that contains the given date. */
@@ -276,36 +278,40 @@ export function seasonForDate(iso: string): number {
 }
 
 /**
- * Replace the PP-goals approximation with true power-play POINTS for the given
- * players, read from their game logs.
+ * Fill in the two stats box scores do not carry, read from each player's game log:
+ *   - skaters: true power-play POINTS (box scores only expose PP goals)
+ *   - goalies: shutouts (absent from box scores entirely)
  *
- * Only worth doing for a shortlist: it costs one request per player. In this
- * league a power-play assist is worth 6 (4 assist + 2 PPP), so leaving it
- * approximated would misrank playmakers.
+ * Worth one request per player for a shortlist only. Both matter under this
+ * league's scoring: a PP assist is worth 6 (4 assist + 2 PPP) and a shutout 5.
  */
-export async function refinePowerPlayPoints(
+export async function refineExactStats(
   players: PlayerWeek[],
   window: { from: string; to: string },
 ): Promise<void> {
   const season = seasonForDate(window.to);
-  const skaters = players.filter((p) => p.posGroup !== "G");
-  await pool(skaters, 8, async (p) => {
+  await pool(players, 8, async (p) => {
     try {
-      const log = await getJson<SkaterLog>(
+      const log = await getJson<PlayerLog>(
         `/v1/player/${p.playerId}/game-log/${season}/2`,
         86400,
       );
       let ppp = 0;
+      let sho = 0;
       for (const g of log.gameLog ?? []) {
-        if (g.gameDate >= window.from && g.gameDate <= window.to) {
-          ppp += g.powerPlayPoints ?? 0;
-        }
+        if (g.gameDate < window.from || g.gameDate > window.to) continue;
+        ppp += g.powerPlayPoints ?? 0;
+        sho += g.shutouts ?? 0;
       }
-      p.ppPoints = ppp;
+      if (p.posGroup === "G") {
+        p.shutouts = sho;
+      } else {
+        p.ppPoints = ppp;
+      }
       p.ppExact = true;
       p.fantasyPoints = fantasyPoints(p);
     } catch {
-      // keep the approximation
+      // keep what the box score gave us
     }
     return null;
   });
