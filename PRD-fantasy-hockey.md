@@ -22,7 +22,7 @@ goalie matchup tool it is not blocked on X credentials.
 
 | Decision | Choice |
 |---|---|
-| **Ownership source** | Yahoo **global `percent_owned`** via the official API (OAuth2) |
+| **Ownership source** | Yahoo **global `percent_owned`** via the **public read-only host** (`pub-api-ro`) — no OAuth, no approval. OAuth retained as a fallback behind `YAHOO_PREFER_OAUTH=1`. |
 | **Card art** | **Split layout, full-bleed action photo** in the new RotoWire brand palette (§6) — modelled on the @NHLFantasy reference AJ supplied |
 | **Slack** | **Deliver threads + cards to Slack for review** |
 | **Diversity rule** | **Max 2 players per position group** (F / D / G) per set of 3 |
@@ -94,8 +94,8 @@ Adding the tab is one row in `SiteNav.tsx`'s `TOOLS` array.
 | Headshots | NHL API `headshot` | ✅ proven |
 | Injuries / inactive | RotoWire `Hockey/NHL/Injuries.php` | ✅ **live data now** |
 | Player news (optional thread colour) | RotoWire `Hockey/NHL/News.php` | ✅ **live data now** |
-| Ownership % | Yahoo Fantasy API `percent_owned` | ⛔ needs OAuth (§9) |
-| League scoring weights | Yahoo league `67213` settings | ⛔ needs OAuth (§9) |
+| Ownership % | `pub-api-ro…/percent_owned` | ✅ **no auth required** |
+| League scoring weights | Yahoo league `67213` settings | ⛔ still needs OAuth — fantasy-point weights remain placeholders (§9) |
 
 **Not available anywhere:** season-long projections or rankings (RotoWire's
 `Projections.php` / `Rankings.php` / `Stats.php` all 404). Everything season-long must be derived.

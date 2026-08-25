@@ -1,13 +1,23 @@
 # Yahoo Fantasy Sports API — access application
 
-Apply at **<https://sports.yahoo.com/developer/access/>** using the Yahoo account that is a
-member of league **67213**.
-
-> Yahoo warns that *"incomplete or insufficiently detailed submissions cannot be evaluated and
-> will be closed without further correspondence."* The answers below are deliberately specific
-> for that reason. Copy them into the matching fields; adjust anything that misstates your intent.
+> ## ⚠️ NO LONGER REQUIRED
+>
+> Ownership percentages now come from Yahoo's **public read-only** host, which needs no OAuth,
+> no developer app and no approval:
+>
+> ```
+> https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/game/nhl?format=json_f
+> https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/games;game_keys={key}/players;position=ALL;start=0;count=25;sort=rank_season/percent_owned?format=json_f
+> ```
+>
+> Verified 2026-08-20: full 100%–1% range, 78 of 173 sampled players under 50%.
+> Implemented in `src/fantasy/yahooPublic.ts` and live in production.
+>
+> This application is kept only as a fallback — submit it if the public host is ever withdrawn,
+> or if we later want *league-specific* ownership rather than league-wide.
 
 ---
+
 
 ## Field: What product are you building?
 
