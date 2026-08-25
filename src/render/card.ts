@@ -81,6 +81,91 @@ function drawContain(
   ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
 }
 
+/**
+ * Choose the horizontal crop offset for a landscape action shot.
+ *
+ * The card's photo panel is tall and narrow, so we keep the full height and take
+ * only a ~290px-wide slice of a 1296px-wide photo. Always taking the middle
+ * silently failed whenever the player was off-centre: Bobby McMann's card
+ * rendered empty ice because his head sat at x≈850 while the centre window was
+ * x 502-794.
+ *
+ * Columns are scored for "subject-ness" (saturation, and darkness relative to
+ * bright ice), weighting the top half more heavily since heads live there.
+ * The content window is only used when it beats the centre by a clear margin --
+ * measured ratios were 1.46 for the broken McMann shot versus ~1.00-1.07 for
+ * already-centred ones, so the threshold stays conservative and leaves good
+ * photos untouched.
+ */
+const CROP_MARGIN = 1.15;
+
+function bestCropX(img: Image, cropW: number): number {
+  const centreX = Math.round((img.width - cropW) / 2);
+  try {
+    const dw = 160;
+    const dh = Math.max(1, Math.round((img.height * dw) / img.width));
+    const tmp = createCanvas(dw, dh);
+    const t = tmp.getContext("2d");
+    t.drawImage(img, 0, 0, dw, dh);
+    const d = t.getImageData(0, 0, dw, dh).data;
+
+    const col = new Array<number>(dw).fill(0);
+    const yStart = Math.floor(dh * 0.08);
+    const yEnd = Math.floor(dh * 0.92);
+    for (let x = 0; x < dw; x++) {
+      let s = 0;
+      for (let y = yStart; y < yEnd; y++) {
+        const i = (y * dw + x) * 4;
+        const r = d[i];
+        const g = d[i + 1];
+        const b = d[i + 2];
+        const sat = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        const weight = y / dh < 0.55 ? 2.0 : 0.8; // favour heads/upper bodies
+        s += (sat + Math.max(0, 0.72 - lum)) * weight;
+      }
+      col[x] = s;
+    }
+    // smooth so a single bright column can't win
+    const sm = col.map((_, i) => {
+      let a = 0;
+      let n = 0;
+      for (let k = -5; k <= 5; k++) {
+        const j = i + k;
+        if (j >= 0 && j < dw) {
+          a += col[j];
+          n++;
+        }
+      }
+      return a / n;
+    });
+
+    const win = Math.max(1, Math.round((cropW * dw) / img.width));
+    const sumAt = (start: number) => {
+      let t2 = 0;
+      for (let i = start; i < start + win; i++) t2 += sm[i];
+      return t2;
+    };
+    const centreStart = Math.round((dw - win) / 2);
+    const centreScore = sumAt(centreStart);
+    let best = centreStart;
+    let bestScore = -1;
+    for (let s = 0; s + win <= dw; s++) {
+      const v = sumAt(s);
+      if (v > bestScore) {
+        bestScore = v;
+        best = s;
+      }
+    }
+    if (centreScore > 0 && bestScore / centreScore >= CROP_MARGIN) {
+      return Math.round((best * img.width) / dw);
+    }
+  } catch {
+    // fall through to the centre crop
+  }
+  return centreX;
+}
+
 function fitText(
   ctx: SKRSContext2D,
   text: string,
@@ -153,7 +238,8 @@ export async function renderFantasyCard(
     let sy = 0;
     if (ir > tr) {
       sw = photo.height * tr;
-      sx = (photo.width - sw) / 2;
+      // Content-aware rather than a fixed centre: see bestCropX.
+      sx = isHeadshot ? (photo.width - sw) / 2 : bestCropX(photo, sw);
     } else {
       sh = photo.width / tr;
       sy = (photo.height - sh) * 0.15; // bias upward so heads stay in frame
