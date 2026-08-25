@@ -37,3 +37,7 @@ npm-install.log
 
 # dev featured-history store
 /.data
+
+# scratch API responses from local probing
+/gk.json
+/t_*.json
