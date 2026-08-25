@@ -18,7 +18,9 @@ function prettyDate(iso: string): string {
 }
 
 export function starsThread(r: SelectionResult): string {
-  const head = `Three Stars of the Week ⭐ (${prettyDate(r.window.from)}–${prettyDate(r.window.to)})`;
+  // "Fantasy Hockey" is included deliberately: it is the term people search on,
+  // so leading with it helps these posts surface.
+  const head = `Fantasy Hockey — Three Stars of the Week ⭐ (${prettyDate(r.window.from)}–${prettyDate(r.window.to)})`;
   const body = r.stars.map(
     (f, i) =>
       `${i + 1}. ${f.fullName} (${f.position} — ${f.teamAbbr}) — ${statLine(f)} · ${f.fantasyPoints.toFixed(1)} FP`,
@@ -27,7 +29,7 @@ export function starsThread(r: SelectionResult): string {
 }
 
 export function sleepersThread(r: SelectionResult): string {
-  const head = `Sleepers to Grab 🔍 (${prettyDate(r.window.from)}–${prettyDate(r.window.to)})`;
+  const head = `Fantasy Hockey — Sleepers to Grab 🔍 (${prettyDate(r.window.from)}–${prettyDate(r.window.to)})`;
   const body = r.sleepers.map((f, i) => {
     const own = f.ownership === null ? "" : ` · ${f.ownership}% rostered`;
     return `${i + 1}. ${f.fullName} (${f.position} — ${f.teamAbbr}) — ${statLine(f)}${own}`;

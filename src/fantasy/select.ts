@@ -30,6 +30,16 @@ const TOP_POOL = 15; // spec: top 15 by fantasy points feeds the Stars pick
 const SLEEPER_POOL = 60; // wider pool to score under-rostered candidates from
 const REFINE_POOL = 90; // players whose PP points are looked up exactly
 
+/**
+ * Team caps per set of 3.
+ *
+ * Without these, one hot team takes over: a real week produced three Rangers in
+ * Sleepers plus a Ranger leading Stars -- four of six players from one club.
+ * The data was right, but it reads as though the tool wasn't paying attention.
+ * Stars is stricter (1) because it is the headline post.
+ */
+const MAX_PER_TEAM = { stars: 1, sleepers: 2 } as const;
+
 /** "B. Brink" -> "b brink"; also built from ("Brandon","Brink"). */
 function initialKey(shortName: string): string {
   const clean = shortName
@@ -60,31 +70,57 @@ function pickWithDiversity(
   candidates: PlayerWeek[],
   n = PICK,
   caps: Record<PosGroup, number> = MAX_PER_GROUP,
-): { picked: PlayerWeek[]; relaxed: boolean } {
-  const counts: Record<PosGroup, number> = { F: 0, D: 0, G: 0 };
+  maxPerTeam = 2,
+): { picked: PlayerWeek[]; relaxed: boolean; relaxedTeam: boolean } {
+  const posCount: Record<PosGroup, number> = { F: 0, D: 0, G: 0 };
+  const teamCount = new Map<string, number>();
   const picked: PlayerWeek[] = [];
+
+  const take = (c: PlayerWeek) => {
+    picked.push(c);
+    posCount[c.posGroup]++;
+    teamCount.set(c.teamAbbr, (teamCount.get(c.teamAbbr) ?? 0) + 1);
+  };
+
+  // Strict: honour both the position and team caps.
   for (const c of candidates) {
     if (picked.length === n) break;
-    if (counts[c.posGroup] >= caps[c.posGroup]) continue;
-    picked.push(c);
-    counts[c.posGroup]++;
+    if (posCount[c.posGroup] >= caps[c.posGroup]) continue;
+    if ((teamCount.get(c.teamAbbr) ?? 0) >= maxPerTeam) continue;
+    take(c);
   }
+
+  let relaxedTeam = false;
   let relaxed = false;
+
+  // Relax the TEAM cap first -- two players from one club reads better than two
+  // goalies or an unfilled slot.
+  if (picked.length < n) {
+    for (const c of candidates) {
+      if (picked.length === n) break;
+      if (picked.includes(c)) continue;
+      if (posCount[c.posGroup] >= caps[c.posGroup]) continue;
+      relaxedTeam = true;
+      take(c);
+    }
+  }
+
+  // Then relax positions, still keeping goalies last so the one-goalie rule is
+  // never silently undone.
   if (picked.length < n) {
     relaxed = true;
-    // Relax the F/D caps first; only add a second goalie as a last resort, so
-    // "relaxed" never silently undoes the one-goalie rule.
     for (const pass of [0, 1] as const) {
       for (const c of candidates) {
         if (picked.length === n) break;
         if (picked.includes(c)) continue;
         if (pass === 0 && c.posGroup === "G") continue;
-        picked.push(c);
+        take(c);
       }
       if (picked.length === n) break;
     }
   }
-  return { picked, relaxed };
+
+  return { picked, relaxed, relaxedTeam };
 }
 
 async function enrich(
@@ -176,7 +212,10 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
 
   // ---------- Three Stars: top 15 by fantasy points ----------
   const starPool = byFp.slice(0, TOP_POOL).filter(passes);
-  const starPick = pickWithDiversity(starPool);
+  const starPick = pickWithDiversity(starPool, PICK, MAX_PER_GROUP, MAX_PER_TEAM.stars);
+  if (starPick.relaxedTeam) {
+    warnings.push("Stars: one-per-team cap relaxed to fill three players.");
+  }
   if (starPick.relaxed) {
     warnings.push("Stars: position-diversity cap relaxed to fill three players.");
   }
@@ -235,9 +274,10 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
     return own !== undefined && own < OWNERSHIP_CEILING;
   });
 
-  let sleeperPick: { picked: PlayerWeek[]; relaxed: boolean } = {
+  let sleeperPick: { picked: PlayerWeek[]; relaxed: boolean; relaxedTeam: boolean } = {
     picked: [],
     relaxed: false,
+    relaxedTeam: false,
   };
   if (under.length) {
     const fps = under.map((p) => p.fantasyPoints);
@@ -258,7 +298,10 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
       })
       .sort((a, b) => b.score - a.score || b.p.fantasyPoints - a.p.fantasyPoints)
       .map((s) => s.p);
-    sleeperPick = pickWithDiversity(scored);
+    sleeperPick = pickWithDiversity(scored, PICK, MAX_PER_GROUP, MAX_PER_TEAM.sleepers);
+    if (sleeperPick.relaxedTeam) {
+      warnings.push("Sleepers: two-per-team cap relaxed to fill three players.");
+    }
     if (sleeperPick.relaxed) {
       warnings.push("Sleepers: position-diversity cap relaxed to fill three players.");
     }
