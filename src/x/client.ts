@@ -62,8 +62,16 @@ export async function assertExpectedAccount(): Promise<XAccount> {
 /** Upload a PNG and return its media id. */
 export async function uploadMedia(png: Buffer, creds: XCredentials): Promise<string> {
   const attempt = async (url: string) => {
+    // media_category is REQUIRED by the v2 endpoint -- without it the upload is
+    // rejected with "Missing media_category field". Found by the probe; it would
+    // otherwise have surfaced as a silent failure on a game night.
+    //
+    // Note the error was a 400 about a field, not a 401: the OAuth signature was
+    // already being accepted, so signing is not the problem here.
     const { body, contentType } = multipart([
       { name: "media", value: png, filename: "matchup.png", type: "image/png" },
+      { name: "media_category", value: "tweet_image" },
+      { name: "media_type", value: "image/png" },
     ]);
     const res = await fetch(url, {
       method: "POST",
