@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AUTH_COOKIE, safeEqual, tokenFor } from "@/middleware";
+import { AUTH_COOKIE, safeEqual, tokenFor } from "@/src/auth/token";
 
 export const runtime = "nodejs";
 

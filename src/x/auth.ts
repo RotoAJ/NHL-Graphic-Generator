@@ -1,3 +1,5 @@
+import { cookieValid } from "@/src/auth/token";
+
 // Shared request auth for the operational endpoints.
 //
 // The repo and the deployed app are both public, so anything that reports
@@ -18,17 +20,7 @@
 export async function hubAuthorized(req: Request): Promise<boolean> {
   const password = process.env.APP_PASSWORD;
   if (!password) return false; // no gate configured -> no session to trust
-
-  const raw = req.headers.get("cookie") ?? "";
-  const match = raw.match(/(?:^|;\s*)hub_auth=([^;]+)/);
-  if (!match) return false;
-
-  const data = new TextEncoder().encode(`${password}|rotowire-nhl-hub|v1`);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  const expected = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return safeEqual(decodeURIComponent(match[1]), expected);
+  return cookieValid(req.headers.get("cookie"), password);
 }
 
 export function cronAuthorized(req: Request): boolean {

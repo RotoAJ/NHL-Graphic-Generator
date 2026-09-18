@@ -12,8 +12,7 @@
 // from it, so a stolen cookie doesn't reveal the password itself. Middleware
 // runs on the Edge runtime, so this uses Web Crypto rather than node:crypto.
 import { NextResponse, type NextRequest } from "next/server";
-
-export const AUTH_COOKIE = "hub_auth";
+import { AUTH_COOKIE, safeEqual, tokenFor } from "@/src/auth/token";
 
 /** Paths that must stay reachable without the password. */
 function isExempt(pathname: string): boolean {
@@ -29,22 +28,6 @@ function isExempt(pathname: string): boolean {
     pathname === "/favicon.ico" ||
     pathname === "/robots.txt"
   );
-}
-
-export async function tokenFor(password: string): Promise<string> {
-  const data = new TextEncoder().encode(`${password}|rotowire-nhl-hub|v1`);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** Length-independent comparison so a wrong cookie can't be probed by timing. */
-export function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
 }
 
 export async function middleware(req: NextRequest) {
