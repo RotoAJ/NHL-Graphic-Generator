@@ -6,14 +6,14 @@
 import { NextResponse } from "next/server";
 import { hasDatabase, recentPosts } from "@/src/goalies/posted";
 import { postingEnabled, verifyCredentials, xConfigured } from "@/src/x/client";
-import { cronAuthorized } from "@/src/x/auth";
+import { cronAuthorized, hubAuthorized } from "@/src/x/auth";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   // Gated: this reports which account is wired up and whether posting is armed,
   // and the deployment is publicly reachable.
-  if (!cronAuthorized(req)) {
+  if (!cronAuthorized(req) && !(await hubAuthorized(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
