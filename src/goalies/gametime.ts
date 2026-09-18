@@ -45,6 +45,8 @@ export interface GameTimeInfo {
   gameTime: string | null;
   nhlGameId: number | null;
   startTimeUTC: string | null;
+  /** NHL game type: 1 preseason, 2 regular season, 3 playoffs. Null if unknown. */
+  gameType: number | null;
 }
 
 /**
@@ -56,7 +58,12 @@ export async function getGameTime(
   awayAbbr: string,
   homeAbbr: string,
 ): Promise<GameTimeInfo> {
-  const miss: GameTimeInfo = { gameTime: null, nhlGameId: null, startTimeUTC: null };
+  const miss: GameTimeInfo = {
+    gameTime: null,
+    nhlGameId: null,
+    startTimeUTC: null,
+    gameType: null,
+  };
   try {
     const res = await fetch(`${API}/v1/schedule/${dateISO}`, {
       headers: HEADERS,
@@ -79,6 +86,7 @@ export async function getGameTime(
           gameTime: g.startTimeUTC ? easternLabel(g.startTimeUTC) : null,
           nhlGameId: g.id ?? null,
           startTimeUTC: g.startTimeUTC ?? null,
+          gameType: g.gameType ?? null,
         };
       }
     }

@@ -40,6 +40,7 @@ interface GameOutcome {
     | "dry-run"
     | "already-posted"
     | "unresolved-goalie"
+    | "not-regular-season"
     | "error";
   tweetId?: string | null;
   detail?: string;
@@ -84,7 +85,26 @@ async function handleGame(
       };
     }
 
-    const { gameTime } = await getGameTime(game.date, away.teamAbbr, home.teamAbbr);
+    const { gameTime, gameType } = await getGameTime(
+      game.date,
+      away.teamAbbr,
+      home.teamAbbr,
+    );
+
+    // Only regular-season games post. The RotoWire feed does not distinguish
+    // preseason, so without this the poller would start tweeting exhibition
+    // matchups in late September. Skipped only when the schedule positively
+    // identifies another type -- an unknown type still proceeds, so a failed
+    // schedule lookup cannot silently suppress a real game.
+    if (gameType !== null && gameType !== 2) {
+      if (!opts.dryRun) await releaseGame(game.rwGameId);
+      return {
+        rwGameId: game.rwGameId,
+        matchup: label,
+        status: "not-regular-season",
+        detail: `NHL gameType ${gameType}`,
+      };
+    }
     // beforeDate excludes today's game from its own history. Without it the
     // "last meeting" footer showed the very game being previewed whenever the
     // poll ran after puck drop, and last-5 lines would absorb the live result.
