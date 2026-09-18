@@ -31,7 +31,10 @@ function meetingLine(lm: LastMeeting): string {
 
 export function matchupTweet(m: MatchupData): string {
   const when = m.gameTime ? ` · ${m.gameTime}` : "";
-  const head = `Confirmed Starters 🥅 Fantasy Hockey${when}`;
+  // Same shape as the weekly threads ("Fantasy Hockey — Three Stars of the
+  // Week"): the search term leads, then the feature name. The first version
+  // ran the two together as "Confirmed Starters 🥅 Fantasy Hockey".
+  const head = `Fantasy Hockey — Confirmed Starters 🥅${when}`;
   const core = [
     `${m.away.goalie.fullName} (${m.away.goalie.teamAbbr}) — ${statLine(m.away)}`,
     `${m.home.goalie.fullName} (${m.home.goalie.teamAbbr}) — ${statLine(m.home)}`,
