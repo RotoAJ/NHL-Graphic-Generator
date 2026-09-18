@@ -27,6 +27,7 @@ import { matchupTweet } from "@/src/goalies/tweet";
 import { renderMatchup } from "@/src/render/matchup";
 import { postingEnabled, xConfigured } from "@/src/x/client";
 import { postWithImage } from "@/src/x/client";
+import { cronAuthorized } from "@/src/x/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -42,16 +43,6 @@ interface GameOutcome {
     | "error";
   tweetId?: string | null;
   detail?: string;
-}
-
-function authorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // unset in dev
-  const auth = req.headers.get("authorization") ?? "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  const header = req.headers.get("x-cron-secret") ?? "";
-  const qs = new URL(req.url).searchParams.get("secret") ?? "";
-  return bearer === secret || header === secret || qs === secret;
 }
 
 async function handleGame(
@@ -139,7 +130,7 @@ async function handleGame(
 }
 
 export async function GET(req: Request) {
-  if (!authorized(req)) {
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
