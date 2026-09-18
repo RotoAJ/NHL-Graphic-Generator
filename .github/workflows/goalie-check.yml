@@ -1,0 +1,91 @@
+name: Goalie confirmed-starter check
+
+# Polls the RotoWire Projected Goalies feed and posts a matchup graphic to X as
+# soon as BOTH starters are confirmed.
+#
+# Window: 14:00-04:59 UTC covers roughly 10am ET to midnight ET, which spans
+# morning-skate confirmations through the last puck drop of the night. Starters
+# are rarely announced before that, and the endpoint dedupes by game id, so
+# extra polls are cheap and harmless.
+#
+# Note on timing: GitHub's scheduled runs can be delayed by ten minutes or more
+# under load. That is fine for "post once confirmed" but it is not a guarantee
+# of promptness -- see the README note about moving to Vercel Cron if the delay
+# ever matters.
+
+on:
+  schedule:
+    - cron: "*/15 14-23 * * *"
+    - cron: "*/15 0-4 * * *"
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: "Detect and report only -- do not post"
+        type: boolean
+        default: true
+      date:
+        description: "Override the date (YYYY-MM-DD, Eastern). Blank = today."
+        type: string
+        required: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poll for confirmed starters
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DRY_RUN: ${{ github.event.inputs.dryRun }}
+          DATE: ${{ github.event.inputs.date }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BASE_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::APP_BASE_URL and CRON_SECRET must both be set as repository secrets."
+            exit 1
+          fi
+
+          QS=""
+          # A scheduled run always posts; only manual runs may ask for a dry run.
+          if [ "${DRY_RUN:-}" = "true" ]; then
+            QS="?dryRun=1"
+            echo "Manual dry run: nothing will be posted."
+          fi
+          if [ -n "${DATE:-}" ]; then
+            if [ -n "$QS" ]; then QS="$QS&date=$DATE"; else QS="?date=$DATE"; fi
+          fi
+
+          echo "Calling ${BASE_URL}/api/cron/goalie-check${QS}"
+          CODE=$(curl -sS -m 300 -o response.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${BASE_URL}/api/cron/goalie-check${QS}")
+
+          echo "HTTP $CODE"
+          cat response.json
+          echo ""
+
+          if [ "$CODE" != "200" ]; then
+            echo "::error::goalie-check returned HTTP $CODE"
+            exit 1
+          fi
+
+          # Surface a one-line summary in the job log.
+          python3 - <<'PY'
+          import json
+          with open("response.json") as f:
+              d = json.load(f)
+          print(f"games seen: {d.get('gamesSeen')}  both confirmed: {d.get('bothConfirmed')}  "
+                f"posted: {d.get('posted')}  skipped(already): {d.get('skippedAlreadyPosted')}")
+          for w in d.get("warnings", []):
+              print(f"::warning::{w}")
+          for r in d.get("results", []):
+              status = r.get("status")
+              line = f"{status}: {r.get('matchup')}"
+              if r.get("tweetId"):
+                  line += f" -> tweet {r['tweetId']}"
+              if status in ("error", "unresolved-goalie"):
+                  print(f"::warning::{line} — {r.get('detail','')}")
+              else:
+                  print(line)
+          PY
