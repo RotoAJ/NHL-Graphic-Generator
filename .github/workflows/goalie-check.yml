@@ -34,15 +34,15 @@ jobs:
     steps:
       - name: Poll for confirmed starters
         env:
-          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           DRY_RUN: ${{ github.event.inputs.dryRun }}
           DATE: ${{ github.event.inputs.date }}
         run: |
           set -euo pipefail
 
-          if [ -z "${BASE_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
-            echo "::error::APP_BASE_URL and CRON_SECRET must both be set as repository secrets."
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::APP_URL and CRON_SECRET repository secrets must be set."
             exit 1
           fi
 
@@ -56,10 +56,10 @@ jobs:
             if [ -n "$QS" ]; then QS="$QS&date=$DATE"; else QS="?date=$DATE"; fi
           fi
 
-          echo "Calling ${BASE_URL}/api/cron/goalie-check${QS}"
+          echo "Calling ${APP_URL}/api/cron/goalie-check${QS}"
           CODE=$(curl -sS -m 300 -o response.json -w '%{http_code}' \
             -H "Authorization: Bearer ${CRON_SECRET}" \
-            "${BASE_URL}/api/cron/goalie-check${QS}")
+            "${APP_URL}/api/cron/goalie-check${QS}")
 
           echo "HTTP $CODE"
           cat response.json
