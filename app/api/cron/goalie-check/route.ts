@@ -25,7 +25,7 @@ import {
 } from "@/src/goalies/posted";
 import { matchupTweet } from "@/src/goalies/tweet";
 import { renderMatchup } from "@/src/render/matchup";
-import { postingEnabled, xConfigured } from "@/src/x/client";
+import { postingEnabled, verifyCredentials, xConfigured } from "@/src/x/client";
 import { postWithImage } from "@/src/x/client";
 import { cronAuthorized } from "@/src/x/auth";
 
@@ -161,6 +161,25 @@ export async function GET(req: Request) {
     );
   }
 
+  // Confirm the credentials resolve to the expected account. Done on a dry run
+  // or when there is something to post, so empty days cost no API calls -- this
+  // is how the credentials get verified without exposing CRON_SECRET to a browser.
+  let account: string | null = null;
+  if (xConfigured() && (dryRun || feed.confirmed.length > 0)) {
+    try {
+      const a = await verifyCredentials();
+      account = `@${a.username}`;
+      const expect = (process.env.X_NHL_EXPECTED_HANDLE ?? "").replace(/^@/, "").trim();
+      if (expect && a.username.toLowerCase() !== expect.toLowerCase()) {
+        warnings.push(
+          `Credentials resolve to @${a.username} but X_NHL_EXPECTED_HANDLE is @${expect} — posting will refuse.`,
+        );
+      }
+    } catch (e) {
+      warnings.push(`X credential check failed: ${(e as Error).message}`);
+    }
+  }
+
   const already = dryRun ? new Set<string>() : await postedGameIds();
   const pending = feed.confirmed.filter((g) => !already.has(g.rwGameId));
 
@@ -173,6 +192,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     date,
     dryRun,
+    account,
     gamesSeen: feed.gamesSeen,
     bothConfirmed: feed.confirmed.length,
     skippedAlreadyPosted: feed.confirmed.length - pending.length,

@@ -12,6 +12,9 @@ const TOOLS: Array<{ href: string; label: string }> = [
 
 export default function SiteNav() {
   const pathname = usePathname();
+  // The sign-in screen shows no tool tabs: they are all gated, so every link
+  // would just bounce back here.
+  if (pathname === "/login") return null;
   return (
     <header className="site-header">
       <div className="site-header-inner">

@@ -459,3 +459,25 @@ textarea:focus {
   text-align: center;
   padding: 20px;
 }
+
+/* ---- login gate ---- */
+.login-panel {
+  max-width: 380px;
+  margin: 12vh auto 0;
+}
+
+@media (max-height: 520px) {
+  .login-panel {
+    margin-top: 24px;
+  }
+}
+
+.login-panel form label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.login-panel .generate {
+  margin-top: 14px;
+  width: 100%;
+}
