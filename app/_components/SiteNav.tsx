@@ -3,16 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/**
- * Tools in the hub. Add a row here to add a tab.
- *
- * The Goalie Matchup tool lives on the `goalie-matchup` branch, on hold until
- * the X API credentials are in place -- add { href: "/goalie-matchup",
- * label: "Goalie Matchup" } when that branch is merged.
- */
+/** Tools in the hub. Add a row here to add a tab. */
 const TOOLS: Array<{ href: string; label: string }> = [
   { href: "/", label: "Trade / Signing" },
   { href: "/fantasy", label: "Fantasy Hockey" },
+  { href: "/goalie-matchup", label: "Goalie Matchup" },
 ];
 
 export default function SiteNav() {

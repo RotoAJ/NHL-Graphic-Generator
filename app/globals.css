@@ -440,3 +440,22 @@ textarea:focus {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* ---- goalie matchup tool ---- */
+.matchup-preview img {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.matchup-preview .empty {
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  padding: 20px;
+}
