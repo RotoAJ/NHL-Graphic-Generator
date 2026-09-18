@@ -45,6 +45,21 @@ export async function GET(req: Request) {
       { status: 400 },
     );
   }
+  // Disarmed by default now that the chain is validated. This endpoint really
+  // does publish to the brand account, and leaving it permanently live on a
+  // public deployment is a standing risk for no ongoing benefit. Set
+  // X_ALLOW_TEST_POST=1 to re-enable it -- e.g. to re-validate after an X API
+  // change -- then unset it again.
+  if (process.env.X_ALLOW_TEST_POST !== "1") {
+    return NextResponse.json(
+      {
+        error:
+          "Test posting is disabled. Set X_ALLOW_TEST_POST=1 and redeploy to re-enable it.",
+        willPost: false,
+      },
+      { status: 403 },
+    );
+  }
   if (!xConfigured()) {
     return NextResponse.json({ error: "X credentials are not configured." }, { status: 400 });
   }
