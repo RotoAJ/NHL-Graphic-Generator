@@ -27,7 +27,7 @@ import { matchupTweet } from "@/src/goalies/tweet";
 import { renderMatchup } from "@/src/render/matchup";
 import { postingEnabled, verifyCredentials, xConfigured } from "@/src/x/client";
 import { postWithImage } from "@/src/x/client";
-import { cronAuthorized } from "@/src/x/auth";
+import { cronAuthorized, hubAuthorized } from "@/src/x/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -130,12 +130,29 @@ async function handleGame(
 }
 
 export async function GET(req: Request) {
-  if (!cronAuthorized(req)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const url = new URL(req.url);
   const dryRun = url.searchParams.get("dryRun") === "1";
+
+  // The cron secret grants full access; that is how GitHub Actions calls this.
+  // A signed-in operator may run DRY RUNS ONLY, so opening this URL in a
+  // browser can never publish -- convenient for testing, and a stray visit or
+  // a prefetch cannot fire a real post.
+  if (!cronAuthorized(req)) {
+    const session = await hubAuthorized(req);
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!dryRun) {
+      return NextResponse.json(
+        {
+          error:
+            "A signed-in session may only run dry runs. Add ?dryRun=1, or call " +
+            "with CRON_SECRET to post for real.",
+        },
+        { status: 403 },
+      );
+    }
+  }
   const date = (url.searchParams.get("date") || easternToday()).trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: "date must be YYYY-MM-DD" }, { status: 400 });
