@@ -122,9 +122,17 @@ export async function getProjectedGoalies(dateISO: string): Promise<ProjectedRes
     return { ...empty, reason: "fetch-error", detail: (e as Error).message };
   }
 
+  // A day with no games returns a valid but empty envelope:
+  //   <Schedule><Date>2026-09-18</Date><Games></Games></Schedule>
+  // That is a normal outcome, not a failure -- reporting it as an error made the
+  // scheduled poll fail every 15 minutes through the entire offseason and on
+  // every in-season off-day. Only a missing envelope means the feed is broken.
+  const hasEnvelope = /<Schedule\b/.test(xml) && /<Games\b|<Games>/.test(xml);
   const gameBlocks = xml.match(/<Game\b[^>]*>[\s\S]*?<\/Game>/g) ?? [];
   if (!gameBlocks.length) {
-    return { ...empty, reason: "empty-parse", detail: `${xml.length} bytes` };
+    return hasEnvelope
+      ? { confirmed: [], gamesSeen: 0, available: true, reason: "ok" }
+      : { ...empty, reason: "empty-parse", detail: `${xml.length} bytes` };
   }
 
   const confirmed: ProjectedGame[] = [];
