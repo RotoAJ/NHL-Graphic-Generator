@@ -47,9 +47,22 @@ export async function postedGameIds(): Promise<Set<string>> {
   try {
     const sql = await db();
     // Only look back a few days; the table is an audit log, not a working set.
+    // A row blocks a game permanently only once it actually resolved -- a tweet
+    // id, or a recorded dry run. A row that is merely *claimed* blocks for ten
+    // minutes and then becomes eligible again.
+    //
+    // This matters because releaseGame() lives in a catch block, and a function
+    // killed by a hard timeout never runs its catch. Without the expiry, one
+    // timeout would leave a game claimed forever: never posted, never retried,
+    // and silent. Ten minutes is comfortably longer than a full run.
     const rows = (await sql`
       SELECT rw_game_id FROM posted_matchups
-      WHERE posted_at > NOW() - INTERVAL '7 days'
+       WHERE posted_at > NOW() - INTERVAL '7 days'
+         AND (
+           tweet_id IS NOT NULL
+           OR dry_run = TRUE
+           OR posted_at > NOW() - INTERVAL '10 minutes'
+         )
     `) as Array<{ rw_game_id: string }>;
     return new Set(rows.map((r) => r.rw_game_id));
   } catch {
@@ -66,10 +79,21 @@ export async function claimGame(
 ): Promise<boolean> {
   if (!hasDatabase()) return true; // dev without a database
   const sql = await db();
+  // One atomic statement decides all four cases, so two concurrent runs can
+  // never both win:
+  //   new game            -> INSERT succeeds, claimed
+  //   already resolved     -> conflict, WHERE fails, NOT claimed
+  //   claimed < 10 min ago -> conflict, WHERE fails, NOT claimed
+  //   stale claim          -> conflict, WHERE passes, posted_at refreshed and
+  //                           re-claimed, so a timed-out run is retried
   const rows = (await sql`
     INSERT INTO posted_matchups (rw_game_id, matchup)
     VALUES (${rwGameId}, ${matchup})
-    ON CONFLICT (rw_game_id) DO NOTHING
+    ON CONFLICT (rw_game_id) DO UPDATE
+       SET posted_at = NOW(), matchup = EXCLUDED.matchup
+     WHERE posted_matchups.tweet_id IS NULL
+       AND posted_matchups.dry_run = FALSE
+       AND posted_matchups.posted_at < NOW() - INTERVAL '10 minutes'
     RETURNING id
   `) as Array<{ id: number }>;
   return rows.length > 0;
