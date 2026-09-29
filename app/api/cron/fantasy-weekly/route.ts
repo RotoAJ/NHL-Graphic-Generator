@@ -21,6 +21,14 @@ function easternHour(now = new Date()): number {
   return Number(s.replace(/[^0-9]/g, ""));
 }
 
+/** Current weekday in US Eastern, e.g. "Mon". */
+function easternWeekday(): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(new Date());
+}
+
 /** Yesterday in Eastern terms -- a Monday run should cover Mon-Sun. */
 function windowEndDate(now = new Date()): string {
   const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
@@ -48,6 +56,18 @@ export async function GET(req: Request) {
   // the goalie poller -- including the external scheduler's own key.
   if (!cronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Monday is enforced HERE as well as in the scheduler. It used to be implied
+  // by the GitHub cron expression; with scheduling moved to an external service
+  // that is configured by hand, a job accidentally set to fire daily would
+  // otherwise produce a new "weekly" set every morning.
+  const weekday = easternWeekday();
+  if (!force && weekday !== "Mon") {
+    return NextResponse.json({
+      skipped: true,
+      reason: `Eastern weekday is ${weekday}, not Mon — this firing is a no-op.`,
+    });
   }
 
   // --- only actually run at 8am Eastern ---
