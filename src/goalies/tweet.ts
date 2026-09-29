@@ -15,7 +15,11 @@ function statLine(side: GoalieSide): string {
   }
   const sv = l5.savePct.toFixed(3).replace(/^0/, "");
   const label = l5.count < 5 ? `last ${l5.count}` : "last 5";
-  return `${label}: ${rec} · ${l5.gaa.toFixed(2)} GAA · ${sv} SV%`;
+  // The graphic already prints "INCL. PREV. SEASON"; the text has to say it too.
+  // On opening night every sample is last season's, and publishing those numbers
+  // unqualified reads as current-season form.
+  const scope = l5.fromPriorSeason ? " (incl. last season)" : "";
+  return `${label}${scope}: ${rec} · ${l5.gaa.toFixed(2)} GAA · ${sv} SV%`;
 }
 
 function meetingLine(lm: LastMeeting): string {
@@ -26,7 +30,10 @@ function meetingLine(lm: LastMeeting): string {
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
   ];
   const when = Number.isFinite(m) ? `${months[m - 1]} ${d}` : lm.date;
-  return `Last meeting (${when}): ${lm.awayAbbr} ${lm.awayScore} @ ${lm.homeAbbr} ${lm.homeScore}${ot}`;
+  // Include the year for a prior-season meeting: on opening night "Mar 10" with
+  // no year reads as though it were recent.
+  const dated = lm.fromPriorSeason ? `${when}, ${y}` : when;
+  return `Last meeting (${dated}): ${lm.awayAbbr} ${lm.awayScore} @ ${lm.homeAbbr} ${lm.homeScore}${ot}`;
 }
 
 export function matchupTweet(m: MatchupData): string {
