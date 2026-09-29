@@ -51,6 +51,8 @@ interface GameOutcome {
     | "already-posted"
     | "unresolved-goalie"
     | "not-regular-season"
+    | "posted-unrecorded"
+    | "posted-unrecorded"
     | "error";
   tweetId?: string | null;
   detail?: string;
@@ -74,6 +76,12 @@ async function handleGame(
       return { rwGameId: game.rwGameId, matchup: label, status: "already-posted" };
     }
   }
+
+  // Set the moment the post lands. Nothing after this may release the claim:
+  // releaseGame() deletes rows with a null tweet_id, so a database failure
+  // between posting and recording would erase the evidence and the next poll
+  // would publish the same card again.
+  let published = false;
 
   try {
     // 2. Names -> NHL ids. Never guess: a wrong match publishes a wrong photo.
@@ -138,7 +146,29 @@ async function handleGame(
     // 3. Render, then post.
     const png = await renderMatchup(data);
     const result = await postWithImage(text, png);
-    await recordResult(game.rwGameId, result.tweetId, result.dryRun);
+    published = !result.dryRun && !!result.tweetId;
+
+    // Retry the bookkeeping: losing it is what allows a duplicate.
+    let recorded = false;
+    for (let attempt = 0; attempt < 3 && !recorded; attempt++) {
+      try {
+        await recordResult(game.rwGameId, result.tweetId, result.dryRun);
+        recorded = true;
+      } catch {
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+    if (!recorded && published) {
+      return {
+        rwGameId: game.rwGameId,
+        matchup: label,
+        status: "posted-unrecorded",
+        tweetId: result.tweetId,
+        detail:
+          "POSTED but the database write failed — this game could post again " +
+          "once the claim ages out. Check before the next poll.",
+      };
+    }
 
     return {
       rwGameId: game.rwGameId,
@@ -149,7 +179,9 @@ async function handleGame(
     };
   } catch (e) {
     // 4. Failed before posting -- let the next poll retry.
-    if (!opts.dryRun) await releaseGame(game.rwGameId);
+    // Failed BEFORE posting -- let the next poll retry. If the post already
+    // landed, keep the claim: a duplicate is worse than a missing audit row.
+    if (!opts.dryRun && !published) await releaseGame(game.rwGameId);
     return {
       rwGameId: game.rwGameId,
       matchup: label,
@@ -191,8 +223,22 @@ export async function GET(req: Request) {
   const warnings: string[] = [];
   if (!xConfigured()) warnings.push("X credentials are not configured — nothing can post.");
   if (!postingEnabled()) warnings.push("X_POSTING_ENABLED is not 1 — running as a dry run.");
+  // Posting without a database means no dedupe, which does not risk a duplicate
+  // so much as guarantee one every five minutes. Refuse rather than warn.
+  if (!hasDatabase() && postingEnabled() && !dryRun) {
+    return NextResponse.json(
+      {
+        date,
+        error:
+          "Refusing to post: no database is configured, so duplicate posts could " +
+          "not be prevented. Set DATABASE_URL, or disable posting.",
+        warnings,
+      },
+      { status: 503 },
+    );
+  }
   if (!hasDatabase()) {
-    warnings.push("No database configured — dedupe is disabled, so repeat posts are possible.");
+    warnings.push("No database configured — dedupe is disabled.");
   }
 
   const feed = await getProjectedGoalies(date);
