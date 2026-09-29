@@ -32,6 +32,16 @@ import { cronAuthorized, hubAuthorized } from "@/src/x/auth";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+/**
+ * Most games handled in a single invocation.
+ *
+ * Free cron services abort a request after roughly 30 seconds, and a poll that
+ * found six newly-confirmed games would render and post for longer than that.
+ * Capping keeps every call short; the remainder is picked up by the next poll a
+ * few minutes later, which is safe because each game is claimed individually.
+ */
+const MAX_PER_RUN = 3;
+
 interface GameOutcome {
   rwGameId: string;
   matchup: string;
@@ -220,9 +230,12 @@ export async function GET(req: Request) {
   const already = dryRun ? new Set<string>() : await postedGameIds();
   const pending = feed.confirmed.filter((g) => !already.has(g.rwGameId));
 
+  const batch = pending.slice(0, MAX_PER_RUN);
+  const deferred = pending.length - batch.length;
+
   const results: GameOutcome[] = [];
   // Sequential on purpose: each game renders a 1600x900 PNG and uploads it.
-  for (const g of pending) {
+  for (const g of batch) {
     results.push(await handleGame(g, { dryRun }));
   }
 
@@ -233,6 +246,7 @@ export async function GET(req: Request) {
     gamesSeen: feed.gamesSeen,
     bothConfirmed: feed.confirmed.length,
     skippedAlreadyPosted: feed.confirmed.length - pending.length,
+    deferredToNextRun: deferred,
     posted: results.filter((r) => r.status === "posted").length,
     results,
     warnings,
