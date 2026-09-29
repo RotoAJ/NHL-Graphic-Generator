@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cronAuthorized } from "@/src/x/auth";
 import { getFeaturedStore, makeRecord } from "@/src/fantasy/featured";
 import { selectPlayers } from "@/src/fantasy/select";
 import { postMessage, slackConfigured, uploadCard } from "@/src/fantasy/slack";
@@ -43,16 +44,9 @@ export async function GET(req: Request) {
   const dryRun = url.searchParams.get("dryRun") === "1";
   const ignoreRecency = url.searchParams.get("ignoreRecency") === "1";
 
-  // --- auth: shared secret, sent as a header or query param ---
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: "CRON_SECRET is not configured" }, { status: 503 });
-  }
-  const provided =
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-    url.searchParams.get("secret") ??
-    "";
-  if (provided !== secret) {
+  // Auth via the shared helper, so this endpoint accepts the same secrets as
+  // the goalie poller -- including the external scheduler's own key.
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -23,9 +23,22 @@ export async function hubAuthorized(req: Request): Promise<boolean> {
   return cookieValid(req.headers.get("cookie"), password);
 }
 
+/**
+ * Secrets accepted on the scheduler endpoints.
+ *
+ * CRON_SECRET_EXTERNAL exists so the third-party cron service holds a key of
+ * its own: it can be rotated or revoked if that service is ever compromised,
+ * without breaking manual GitHub runs, and vice versa.
+ */
+function acceptedSecrets(): string[] {
+  return [process.env.CRON_SECRET, process.env.CRON_SECRET_EXTERNAL].filter(
+    (s): s is string => typeof s === "string" && s.length > 0,
+  );
+}
+
 export function cronAuthorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return process.env.NODE_ENV !== "production";
+  const secrets = acceptedSecrets();
+  if (!secrets.length) return process.env.NODE_ENV !== "production";
 
   const auth = req.headers.get("authorization") ?? "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -36,5 +49,5 @@ export function cronAuthorized(req: Request): boolean {
   } catch {
     qs = "";
   }
-  return bearer === secret || header === secret || qs === secret;
+  return secrets.some((s) => bearer === s || header === s || qs === s);
 }

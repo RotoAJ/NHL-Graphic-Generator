@@ -4,10 +4,17 @@ name: Fantasy Hockey weekly post
 # is 08:00 America/New_York depending on daylight saving (EDT vs EST). The endpoint
 # itself only acts when it is genuinely 08:00 Eastern, so the other firing is a
 # no-op. Without this, a single fixed UTC time silently drifts to 7am in November.
+# NOTE: the cron schedule was REMOVED on 2026-09-29.
+#
+# GitHub ran this a handful of times a day instead of on schedule -- the
+# goalie poller averaged 2-7 runs a day against the ~56 its */15 schedule
+# asked for, and the weekly job landed 6-8 hours late, which its 8am guard
+# turned into a silent no-op every week. Scheduled workflows are best-effort
+# and are dropped under load; that is not tunable.
+#
+# Scheduling now comes from an external cron service calling the endpoint
+# directly. This workflow is kept for MANUAL runs only.
 on:
-  schedule:
-    - cron: "0 12 * * 1"   # 08:00 ET while EDT (Mar-Nov)
-    - cron: "0 13 * * 1"   # 08:00 ET while EST (Nov-Mar)
   workflow_dispatch:        # lets you run it by hand from the Actions tab
     inputs:
       force:

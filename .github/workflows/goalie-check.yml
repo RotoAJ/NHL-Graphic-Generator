@@ -13,10 +13,17 @@ name: Goalie confirmed-starter check
 # of promptness -- see the README note about moving to Vercel Cron if the delay
 # ever matters.
 
+# NOTE: the cron schedule was REMOVED on 2026-09-29.
+#
+# GitHub ran this a handful of times a day instead of on schedule -- the
+# goalie poller averaged 2-7 runs a day against the ~56 its */15 schedule
+# asked for, and the weekly job landed 6-8 hours late, which its 8am guard
+# turned into a silent no-op every week. Scheduled workflows are best-effort
+# and are dropped under load; that is not tunable.
+#
+# Scheduling now comes from an external cron service calling the endpoint
+# directly. This workflow is kept for MANUAL runs only.
 on:
-  schedule:
-    - cron: "*/15 14-23 * * *"
-    - cron: "*/15 0-4 * * *"
   workflow_dispatch:
     inputs:
       dryRun:
