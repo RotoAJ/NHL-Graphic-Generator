@@ -31,8 +31,8 @@ const MONO = "IBM Plex Mono, monospace";
  * with the size or large text clips the top edge. MATCHUP_TITLE_PX overrides
  * it for side-by-side comparison renders.
  */
-const TITLE_PX = Number(process.env.MATCHUP_TITLE_PX) || 54;
-// 54px sat on a 78px baseline; keep the same proportion, but never let the
+const TITLE_PX = Number(process.env.MATCHUP_TITLE_PX) || 78;
+// 54px sat on a 78px baseline; keep that proportion, but never let the
 // cap height run past the 10px colour bar at the top.
 const TITLE_BASELINE = Math.max(
   Math.round(TITLE_PX * 0.72) + 16,
