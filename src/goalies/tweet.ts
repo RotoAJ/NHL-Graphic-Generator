@@ -15,11 +15,9 @@ function statLine(side: GoalieSide): string {
   }
   const sv = l5.savePct.toFixed(3).replace(/^0/, "");
   const label = l5.count < 5 ? `last ${l5.count}` : "last 5";
-  // The graphic already prints "INCL. PREV. SEASON"; the text has to say it too.
-  // On opening night every sample is last season's, and publishing those numbers
-  // unqualified reads as current-season form.
-  const scope = l5.fromPriorSeason ? " (incl. last season)" : "";
-  return `${label}${scope}: ${rec} · ${l5.gaa.toFixed(2)} GAA · ${sv} SV%`;
+  // No prior-season qualifier: it made the post wordy for something readers
+  // work out themselves, and it only applies for the first weeks of a season.
+  return `${label}: ${rec} · ${l5.gaa.toFixed(2)} GAA · ${sv} SV%`;
 }
 
 function meetingLine(lm: LastMeeting): string {

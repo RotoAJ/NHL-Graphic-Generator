@@ -212,7 +212,9 @@ function fmtRecord(s: LastStarts): string {
 function l5Label(s: LastStarts): string {
   if (s.count === 0) return "NO NHL STARTS";
   const base = s.count < 5 ? `LAST ${s.count} START${s.count === 1 ? "" : "S"}` : "LAST 5 STARTS";
-  return s.fromPriorSeason ? `${base} · INCL. PREV. SEASON` : base;
+  // Deliberately NOT flagging a prior-season sample: it only happens in the
+  // first weeks of a season, readers infer it, and it crowded the card.
+  return base;
 }
 
 function ordinalDate(iso: string): string {
@@ -363,11 +365,9 @@ export async function renderMatchup(data: MatchupData): Promise<Buffer> {
   const m = data.lastMeeting;
   tracked(
     ctx,
-    m
-      ? m.fromPriorSeason
-        ? "LAST MEETING · PREVIOUS SEASON"
-        : "LAST MEETING"
-      : "FIRST MEETING",
+    // The footer prints the full date next to this, so "PREVIOUS SEASON" was
+    // redundant as well as wordy.
+    m ? "LAST MEETING" : "FIRST MEETING",
     W / 2,
     FOOTER_TOP + 34,
     3,
