@@ -23,6 +23,23 @@ const BOLD = "Barlow Condensed, sans-serif";
 const MONO = "IBM Plex Mono, monospace";
 
 // Vertical rhythm
+/**
+ * Header title size, and the baseline derived from it.
+ *
+ * The header band is tight: the game time sits just below the title and the
+ * headshots begin only a few pixels under that, so the baseline has to move
+ * with the size or large text clips the top edge. MATCHUP_TITLE_PX overrides
+ * it for side-by-side comparison renders.
+ */
+const TITLE_PX = Number(process.env.MATCHUP_TITLE_PX) || 54;
+// 54px sat on a 78px baseline; keep the same proportion, but never let the
+// cap height run past the 10px colour bar at the top.
+const TITLE_BASELINE = Math.max(
+  Math.round(TITLE_PX * 0.72) + 16,
+  Math.round(TITLE_PX * 1.44),
+);
+const GAMETIME_Y = TITLE_BASELINE + 38;
+
 const HEADSHOT_CY = 272;
 const HEADSHOT_D = 300;
 const NAME_Y = 452;
@@ -236,13 +253,13 @@ export async function renderMatchup(data: MatchupData): Promise<Buffer> {
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "center";
   ctx.fillStyle = WHITE;
-  ctx.font = `54px ${HEAVY}`;
-  tracked(ctx, "CONFIRMED STARTERS", W / 2, 78, 6);
+  ctx.font = `${TITLE_PX}px ${HEAVY}`;
+  tracked(ctx, "CONFIRMED STARTERS", W / 2, TITLE_BASELINE, Math.round(TITLE_PX / 9));
 
   if (data.gameTime) {
     ctx.fillStyle = LEMON;
     ctx.font = `28px ${MONO}`;
-    ctx.fillText(data.gameTime, W / 2, 116);
+    ctx.fillText(data.gameTime, W / 2, GAMETIME_Y);
   }
 
   // ---- one side ----
