@@ -4,22 +4,12 @@ import { getFeaturedStore, makeRecord } from "@/src/fantasy/featured";
 import { selectPlayers } from "@/src/fantasy/select";
 import { postMessage, slackConfigured, uploadCard } from "@/src/fantasy/slack";
 import { sleepersThread, starsThread } from "@/src/fantasy/threads";
-import { saveWeek } from "@/src/fantasy/weeks";
+import { loadWeek, saveWeek } from "@/src/fantasy/weeks";
 import { renderFantasyCard } from "@/src/render/card";
 import type { Finalist, ThreadType } from "@/src/fantasy/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-
-/** Current hour in US Eastern, DST-aware. */
-function easternHour(now = new Date()): number {
-  const s = now.toLocaleString("en-US", {
-    timeZone: "America/New_York",
-    hour: "numeric",
-    hour12: false,
-  });
-  return Number(s.replace(/[^0-9]/g, ""));
-}
 
 /** Current weekday in US Eastern, e.g. "Mon". */
 function easternWeekday(): string {
@@ -70,16 +60,29 @@ export async function GET(req: Request) {
     });
   }
 
-  // --- only actually run at 8am Eastern ---
-  const hour = easternHour();
-  if (!force && hour !== 8) {
-    return NextResponse.json({
-      skipped: true,
-      reason: `Eastern hour is ${hour}, not 8 — this firing is a no-op.`,
-    });
-  }
-
   const endDate = url.searchParams.get("date") ?? windowEndDate();
+
+  // Idempotency replaces the old "only at 8am Eastern" check.
+  //
+  // That check cost two weeks of output without ever reporting a failure: a
+  // run arriving at any other hour returned 200 with skipped:true, so GitHub
+  // (firing 6-8 hours late) and then a cron job set to 08:00 UTC both looked
+  // perfectly healthy while producing nothing. The hour was never the point --
+  // what matters is that the week gets produced exactly once.
+  //
+  // So: run on Monday unless this week's set already exists. A delayed or
+  // mistimed firing now yields a late post instead of silence, and a repeat
+  // firing is a no-op rather than a duplicate.
+  if (!force) {
+    const existing = await loadWeek(endDate);
+    if (existing) {
+      return NextResponse.json({
+        skipped: true,
+        reason: `Week ending ${endDate} has already been produced.`,
+        permalink: `/fantasy/week/${endDate}`,
+      });
+    }
+  }
 
   try {
     const result = await selectPlayers({ endDate, ignoreRecency });
