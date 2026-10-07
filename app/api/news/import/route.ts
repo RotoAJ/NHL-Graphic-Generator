@@ -52,6 +52,17 @@ function toUpdate(id: number, e: LogEntry): NewsUpdate {
   };
 }
 
+/** What is currently stored, so the import page can show before/after. */
+export async function GET(req: Request) {
+  if (!cronAuthorized(req) && !(await hubAuthorized(req))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!hasDatabase()) {
+    return NextResponse.json({ error: "No database configured." }, { status: 503 });
+  }
+  return NextResponse.json({ store: await stats() });
+}
+
 export async function POST(req: Request) {
   if (!cronAuthorized(req) && !(await hubAuthorized(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
