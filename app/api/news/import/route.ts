@@ -9,7 +9,13 @@
 // plain array of records. Existing rows are never overwritten (see
 // captureUpdates), so this is safe to run more than once.
 import { NextResponse } from "next/server";
-import { captureUpdates, hasDatabase, stats } from "@/src/news/store";
+import {
+  captureUpdates,
+  gapSummary,
+  hasDatabase,
+  stats,
+  updatesAfterId,
+} from "@/src/news/store";
 import type { NewsUpdate } from "@/src/news/rotowire";
 import { cronAuthorized, hubAuthorized } from "@/src/x/auth";
 
@@ -60,7 +66,7 @@ export async function GET(req: Request) {
   if (!hasDatabase()) {
     return NextResponse.json({ error: "No database configured." }, { status: 503 });
   }
-  return NextResponse.json({ store: await stats() });
+  return NextResponse.json({ store: await stats(), gaps: await gapSummary() });
 }
 
 export async function POST(req: Request) {
@@ -106,15 +112,31 @@ export async function POST(req: Request) {
     );
   }
 
+  // ?compare=1 reports the difference without writing, so the check can be
+  // repeated during the parallel period without the hub quietly topping
+  // itself up and erasing the very signal being measured.
+  const compareOnly = new URL(req.url).searchParams.get("compare") === "1";
+
   const before = await stats();
-  const added = await captureUpdates(records);
-  const after = await stats();
+  let added: number[];
+  if (compareOnly) {
+    const ids = records.map((x) => x.id).sort((a, b) => a - b);
+    const present = new Set(
+      (await updatesAfterId(Math.min(...ids) - 1, 5000)).map((u) => u.id),
+    );
+    added = ids.filter((id) => !present.has(id));
+  } else {
+    added = await captureUpdates(records);
+  }
+  const after = compareOnly ? before : await stats();
 
   return NextResponse.json({
     ok: true,
+    compareOnly,
     received: records.length,
     skippedIds: skipped.slice(0, 20),
     added: added.length,
+    missingFromHub: compareOnly ? added.slice(0, 100) : undefined,
     alreadyPresent: records.length - added.length,
     store: { before, after },
   });

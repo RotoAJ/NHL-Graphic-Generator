@@ -9,7 +9,19 @@ interface Store {
   lastCapturedAt: string | null;
 }
 
+interface GapRange {
+  from: number;
+  to: number;
+  count: number;
+}
+interface Gaps {
+  ranges: GapRange[];
+  missingTotal: number;
+}
+
 interface ImportResult {
+  compareOnly?: boolean;
+  missingFromHub?: number[];
   received: number;
   added: number;
   alreadyPresent: number;
@@ -24,6 +36,8 @@ function describe(s: Store | null): string {
 
 export default function NewsImport() {
   const [store, setStore] = useState<Store | null>(null);
+  const [gaps, setGaps] = useState<Gaps | null>(null);
+  const [compareOnly, setCompareOnly] = useState(true);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +47,10 @@ export default function NewsImport() {
     try {
       const r = await fetch("/api/news/import");
       const j = await r.json();
-      if (r.ok) setStore(j.store as Store);
+      if (r.ok) {
+        setStore(j.store as Store);
+        setGaps((j.gaps ?? null) as Gaps | null);
+      }
     } catch {
       /* status is a nicety */
     }
@@ -60,7 +77,7 @@ export default function NewsImport() {
         } catch {
           throw new Error("That file isn't valid JSON. Is it the snapshot log?");
         }
-        const r = await fetch("/api/news/import", {
+        const r = await fetch(`/api/news/import${compareOnly ? "?compare=1" : ""}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(parsed),
@@ -69,6 +86,7 @@ export default function NewsImport() {
         if (!r.ok) throw new Error(j.error ?? `Import failed (${r.status})`);
         setResult(j);
         setStore(j.store.after);
+        void refresh();
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -76,7 +94,7 @@ export default function NewsImport() {
         e.target.value = "";
       }
     },
-    [],
+    [compareOnly, refresh],
   );
 
   return (
@@ -97,6 +115,43 @@ export default function NewsImport() {
         )}
       </div>
 
+      <div style={{ marginBottom: 16 }}>
+        <strong>Completeness check:</strong>{" "}
+        {gaps === null ? (
+          "…"
+        ) : gaps.missingTotal === 0 ? (
+          <span>no holes — every Id between the first and last is present</span>
+        ) : (
+          <span>
+            {gaps.missingTotal} missing Id{gaps.missingTotal === 1 ? "" : "s"} in{" "}
+            {gaps.ranges.length} run{gaps.ranges.length === 1 ? "" : "s"}
+          </span>
+        )}
+        {gaps && gaps.ranges.length > 0 && (
+          <ul className="warn-list">
+            {gaps.ranges.slice(0, 12).map((g) => (
+              <li key={g.from}>
+                {g.from === g.to ? g.from : `${g.from}–${g.to}`} ({g.count})
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="hint">
+          The feed&apos;s Ids are gapless in reality, so no holes means nothing is
+          missing. A hole is either a capture we missed or one of RotoWire&apos;s
+          lost days — compare against the log below to tell those apart.
+        </div>
+      </div>
+
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={compareOnly}
+          onChange={(e) => setCompareOnly(e.target.checked)}
+        />
+        <span>Compare only — report differences without importing</span>
+      </label>
+
       <label htmlFor="logfile">Snapshot log file (.json)</label>
       <input id="logfile" type="file" accept="application/json,.json" onChange={onFile} disabled={busy} />
       {fileName && <div className="hint">Selected: {fileName}</div>}
@@ -109,13 +164,21 @@ export default function NewsImport() {
           <ul className="warn-list">
             <li>{result.received.toLocaleString()} records read from the file</li>
             <li>
-              <strong>{result.added.toLocaleString()} newly added</strong>
+              <strong>
+                {result.added.toLocaleString()}{" "}
+                {result.compareOnly ? "in the log but MISSING from the hub" : "newly added"}
+              </strong>
+              {result.compareOnly && result.added > 0 && result.missingFromHub && (
+                <div className="hint">Ids: {result.missingFromHub.join(", ")}</div>
+              )}
             </li>
-            <li>{result.alreadyPresent.toLocaleString()} already present (skipped)</li>
-            <li>
-              Store went from {describe(result.store.before)} to{" "}
-              {describe(result.store.after)}
-            </li>
+            <li>{result.alreadyPresent.toLocaleString()} already present in the hub</li>
+            {!result.compareOnly && (
+              <li>
+                Store went from {describe(result.store.before)} to{" "}
+                {describe(result.store.after)}
+              </li>
+            )}
           </ul>
         </div>
       )}

@@ -184,3 +184,32 @@ export async function missingIds(fromId: number, toId: number): Promise<number[]
   for (let i = fromId; i <= toId; i++) if (!have.has(i)) gaps.push(i);
   return gaps;
 }
+
+/**
+ * Holes across the whole stored range, grouped into contiguous runs.
+ *
+ * The feed's real Ids are gapless, so this is a self-contained completeness
+ * check: no holes means nothing is missing between the first and last Id held,
+ * with no need to compare against any other source. A hole is either a capture
+ * we missed or one of RotoWire's permanently-lost days -- comparing against the
+ * snapshot log is what tells those two apart.
+ */
+export async function gapSummary(): Promise<{
+  ranges: Array<{ from: number; to: number; count: number }>;
+  missingTotal: number;
+}> {
+  const s = await stats();
+  if (!s.minId || !s.maxId) return { ranges: [], missingTotal: 0 };
+  const missing = await missingIds(s.minId, s.maxId);
+  const ranges: Array<{ from: number; to: number; count: number }> = [];
+  for (const id of missing) {
+    const last = ranges[ranges.length - 1];
+    if (last && id === last.to + 1) {
+      last.to = id;
+      last.count++;
+    } else {
+      ranges.push({ from: id, to: id, count: 1 });
+    }
+  }
+  return { ranges, missingTotal: missing.length };
+}
