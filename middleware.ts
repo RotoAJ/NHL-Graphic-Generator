@@ -22,6 +22,9 @@ function isExempt(pathname: string): boolean {
     // Called by GitHub Actions and already gated by CRON_SECRET.
     pathname.startsWith("/api/cron/") ||
     pathname.startsWith("/api/x/") ||
+    // Carries its own secret/session check and is called by the news digest
+    // skill with a bearer token rather than a browser cookie.
+    pathname.startsWith("/api/news/") ||
     pathname.startsWith("/_next/") ||
     pathname.startsWith("/brand/") ||
     pathname.startsWith("/logos/") ||
