@@ -12,7 +12,13 @@
 // stores and never interact; the only shared resource is a cheap GET.
 import { NextResponse } from "next/server";
 import { fetchRecentNews } from "@/src/news/rotowire";
-import { captureUpdates, hasDatabase, missingIds, stats } from "@/src/news/store";
+import {
+  captureUpdates,
+  hasDatabase,
+  missingIds,
+  recordRun,
+  stats,
+} from "@/src/news/store";
 import { cronAuthorized, hubAuthorized } from "@/src/x/auth";
 
 export const runtime = "nodejs";
@@ -58,6 +64,11 @@ export async function GET(req: Request) {
         ? []
         : await missingIds(fetchedMin, fetchedMax)
       : [];
+
+  // Record the run itself, even when it stored nothing. A run that adds no
+  // rows is still a healthy run; without this a quiet job is indistinguishable
+  // from a stopped one.
+  if (!dryRun) await recordRun(updates.length, added.length, fetchedMax);
 
   return NextResponse.json({
     ok: true,

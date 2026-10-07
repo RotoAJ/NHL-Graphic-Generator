@@ -13,6 +13,7 @@ import {
   captureUpdates,
   gapSummary,
   hasDatabase,
+  lastRun,
   stats,
   updatesAfterId,
 } from "@/src/news/store";
@@ -66,7 +67,11 @@ export async function GET(req: Request) {
   if (!hasDatabase()) {
     return NextResponse.json({ error: "No database configured." }, { status: 503 });
   }
-  return NextResponse.json({ store: await stats(), gaps: await gapSummary() });
+  return NextResponse.json({
+    store: await stats(),
+    gaps: await gapSummary(),
+    lastRun: await lastRun(),
+  });
 }
 
 export async function POST(req: Request) {

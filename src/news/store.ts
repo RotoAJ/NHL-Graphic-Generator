@@ -40,6 +40,18 @@ async function db() {
       )
     `;
     await sql`CREATE INDEX IF NOT EXISTS news_updates_date_time_idx ON news_updates (date_time)`;
+    // Separate from the updates table on purpose: a run that stores nothing is
+    // still a healthy run, and without its own record a quiet job and a dead
+    // job look identical.
+    await sql`
+      CREATE TABLE IF NOT EXISTS news_runs (
+        id       SERIAL PRIMARY KEY,
+        ran_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        fetched  INTEGER NOT NULL DEFAULT 0,
+        added    INTEGER NOT NULL DEFAULT 0,
+        max_id   BIGINT
+      )
+    `;
     migrated = true;
   }
   return sql;
@@ -212,4 +224,59 @@ export async function gapSummary(): Promise<{
     }
   }
   return { ranges, missingTotal: missing.length };
+}
+
+export interface RunRecord {
+  ranAt: string;
+  fetched: number;
+  added: number;
+  maxId: number | null;
+}
+
+/** Record that a capture ran, whether or not it stored anything. */
+export async function recordRun(
+  fetched: number,
+  added: number,
+  maxId: number | null,
+): Promise<void> {
+  if (!hasDatabase()) return;
+  try {
+    const sql = await db();
+    await sql`
+      INSERT INTO news_runs (fetched, added, max_id)
+      VALUES (${fetched}, ${added}, ${maxId})
+    `;
+    // Keep the heartbeat small; it is a liveness signal, not an archive.
+    await sql`
+      DELETE FROM news_runs
+       WHERE id < (SELECT MAX(id) - 500 FROM news_runs)
+    `;
+  } catch {
+    // A failed heartbeat must never fail the capture itself.
+  }
+}
+
+export async function lastRun(): Promise<RunRecord | null> {
+  if (!hasDatabase()) return null;
+  try {
+    const sql = await db();
+    const rows = (await sql`
+      SELECT ran_at, fetched, added, max_id FROM news_runs ORDER BY id DESC LIMIT 1
+    `) as Array<{
+      ran_at: string | Date;
+      fetched: number;
+      added: number;
+      max_id: string | number | null;
+    }>;
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      ranAt: typeof r.ran_at === "string" ? r.ran_at : r.ran_at.toISOString(),
+      fetched: r.fetched,
+      added: r.added,
+      maxId: r.max_id === null ? null : Number(r.max_id),
+    };
+  } catch {
+    return null;
+  }
 }

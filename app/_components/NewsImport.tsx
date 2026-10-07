@@ -9,6 +9,13 @@ interface Store {
   lastCapturedAt: string | null;
 }
 
+interface LastRun {
+  ranAt: string;
+  fetched: number;
+  added: number;
+  maxId: number | null;
+}
+
 interface GapRange {
   from: number;
   to: number;
@@ -37,6 +44,7 @@ function describe(s: Store | null): string {
 export default function NewsImport() {
   const [store, setStore] = useState<Store | null>(null);
   const [gaps, setGaps] = useState<Gaps | null>(null);
+  const [run, setRun] = useState<LastRun | null>(null);
   const [compareOnly, setCompareOnly] = useState(true);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -50,6 +58,7 @@ export default function NewsImport() {
       if (r.ok) {
         setStore(j.store as Store);
         setGaps((j.gaps ?? null) as Gaps | null);
+        setRun((j.lastRun ?? null) as LastRun | null);
       }
     } catch {
       /* status is a nicety */
@@ -108,9 +117,16 @@ export default function NewsImport() {
 
       <div style={{ marginBottom: 14 }}>
         <strong>Currently stored:</strong> {describe(store)}
+        {run && (
+          <div className="hint">
+            Last run: {new Date(run.ranAt).toLocaleString()} — fetched {run.fetched},
+            stored {run.added} new
+          </div>
+        )}
         {store?.lastCapturedAt && (
           <div className="hint">
-            Last capture: {new Date(store.lastCapturedAt).toLocaleString()}
+            Newest item stored: {new Date(store.lastCapturedAt).toLocaleString()}
+            {run && run.added === 0 && " (a later run found nothing new, which is normal)"}
           </div>
         )}
       </div>
