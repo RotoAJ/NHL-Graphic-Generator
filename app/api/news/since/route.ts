@@ -15,6 +15,7 @@
 import { NextResponse } from "next/server";
 import {
   hasDatabase,
+  lastRun,
   missingIds,
   stats,
   updatesAfterId,
@@ -102,17 +103,33 @@ export async function GET(req: Request) {
     );
   }
 
-  // Continuity inside what we're returning. The underlying feed's Ids are
-  // gapless, so a hole here is a real miss and the digest should say so.
+  // Continuity from where the caller left off. The real feed's Ids are gapless,
+  // so any hole is a genuine miss. In afterId mode the range starts at
+  // afterId + 1 rather than at the first returned item: otherwise a hole
+  // immediately after the caller's last-seen Id would go unreported, and that is
+  // exactly where a missed capture shows up.
+  const rangeStart = afterIdRaw !== null ? Number(afterIdRaw) + 1 : updates[0]?.id;
+  const rangeEnd = updates.length ? updates[updates.length - 1].id : null;
   const gaps =
-    updates.length > 1
-      ? await missingIds(updates[0].id, updates[updates.length - 1].id)
+    updates.length && rangeStart !== undefined && rangeEnd !== null
+      ? await missingIds(rangeStart, rangeEnd)
       : [];
+
+  // Liveness. An empty result is ambiguous: a quiet stretch and a stopped
+  // capture both return nothing. The run heartbeat disambiguates, so the
+  // caller can refuse to report "nothing new" off a store that has gone stale.
+  const run = await lastRun();
+  const ageMin = run ? Math.round((Date.now() - new Date(run.ranAt).getTime()) / 60000) : null;
+  const stale = ageMin === null || ageMin > 90;
 
   return NextResponse.json({
     count: updates.length,
     idRange: updates.length ? [updates[0].id, updates[updates.length - 1].id] : null,
     gaps,
+    // true when the capture job has not run for 90+ minutes -- do NOT treat an
+    // empty result as "nothing happened" in that case.
+    stale,
+    lastRunMinutesAgo: ageMin,
     truncated: updates.length === limit,
     store,
     updates: project(updates),
