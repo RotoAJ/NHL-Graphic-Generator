@@ -13,13 +13,37 @@
 //                     own last range straight back in)
 //   ?since=2026-10-06T12:00:00Z   everything with a feed DateTime at or after
 import { NextResponse } from "next/server";
-import { hasDatabase, missingIds, stats, updatesAfterId, updatesSince } from "@/src/news/store";
+import {
+  hasDatabase,
+  missingIds,
+  stats,
+  updatesAfterId,
+  updatesByIds,
+  updatesSince,
+} from "@/src/news/store";
 import { cronAuthorized, hubAuthorized } from "@/src/x/auth";
+import { safeEqual } from "@/src/auth/token";
 
 export const runtime = "nodejs";
 
+/**
+ * A read-only key that opens THIS endpoint and nothing else.
+ *
+ * The digest skill fetches with WebFetch, which cannot send an Authorization
+ * header, so its credential has to travel in the URL. Reusing the cron secret
+ * for that would hand the skill -- and any log that records its URLs -- the
+ * ability to trigger the goalie poster. This key can only read captured news,
+ * so a leak costs a re-key rather than an unwanted post.
+ */
+function readKeyValid(req: Request): boolean {
+  const expected = process.env.NEWS_READ_SECRET;
+  if (!expected) return false;
+  const supplied = new URL(req.url).searchParams.get("key") ?? "";
+  return supplied.length > 0 && safeEqual(supplied, expected);
+}
+
 export async function GET(req: Request) {
-  if (!cronAuthorized(req) && !(await hubAuthorized(req))) {
+  if (!readKeyValid(req) && !cronAuthorized(req) && !(await hubAuthorized(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!hasDatabase()) {
@@ -27,6 +51,35 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
+
+  // ?compact=1 drops the Analysis paragraph. The digest's own format rule is
+  // to never copy Analysis in, and it is most of each record's size; WebFetch
+  // passes content through a small summarising model, so a large payload risks
+  // being truncated -- a silent shortfall, which is the exact failure this
+  // endpoint exists to remove. Use ?ids=1,2,3 to pull full records, Analysis
+  // included, for just the borderline items that need a close read.
+  const compact = url.searchParams.get("compact") === "1";
+  const project = <T extends { analysis: string }>(rows: T[]) =>
+    compact ? rows.map(({ analysis: _a, ...rest }) => rest) : rows;
+
+  const idsRaw = url.searchParams.get("ids");
+  if (idsRaw) {
+    const ids = idsRaw
+      .split(",")
+      .map((x) => Number(x.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .slice(0, 50);
+    if (!ids.length) {
+      return NextResponse.json({ error: "ids must be comma-separated numbers" }, { status: 400 });
+    }
+    const rows = await updatesByIds(ids);
+    return NextResponse.json({
+      count: rows.length,
+      notFound: ids.filter((i) => !rows.some((r) => r.id === i)),
+      updates: rows,
+    });
+  }
+
   const afterIdRaw = url.searchParams.get("afterId");
   const since = url.searchParams.get("since");
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 300) || 300, 500);
@@ -62,6 +115,6 @@ export async function GET(req: Request) {
     gaps,
     truncated: updates.length === limit,
     store,
-    updates,
+    updates: project(updates),
   });
 }

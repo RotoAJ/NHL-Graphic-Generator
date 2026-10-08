@@ -280,3 +280,13 @@ export async function lastRun(): Promise<RunRecord | null> {
     return null;
   }
 }
+
+/** Full records for specific Ids, in Id order. */
+export async function updatesByIds(ids: number[]): Promise<StoredUpdate[]> {
+  if (!hasDatabase() || !ids.length) return [];
+  const sql = await db();
+  const rows = (await sql`
+    SELECT * FROM news_updates WHERE id = ANY(${ids}) ORDER BY id ASC
+  `) as Row[];
+  return rows.map(toUpdate);
+}
