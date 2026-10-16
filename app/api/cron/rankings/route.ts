@@ -79,6 +79,7 @@ export async function GET(req: Request) {
     });
   } catch (e) {
     const message = (e as Error).message;
+    if (/Nothing to process/i.test(message)) return NextResponse.json({ skipped: true, reason: message });
     return NextResponse.json({ error: message }, { status: statusFor(message) });
   }
 }
