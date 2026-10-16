@@ -10,20 +10,32 @@ import { idsJson, num, sql, str } from "@/src/rankings/db";
 import {
   runRankings,
   type Changelog,
+  type Correction,
   type PoolEntry,
   type RankRow,
 } from "@/src/rankings/engine";
+import { addDays as addIsoDays, runOutlook, type OutlookLog, type OutlookRow } from "@/src/rankings/outlook";
+import { fetchTeamSchedules, fetchTeamStats } from "@/src/rankings/schedule";
 import { addDays, ingestGames, windowGameIds, type IngestResult } from "@/src/rankings/games";
 import { fetchInjuries } from "@/src/rankings/injuries";
 import {
   baselineThrough,
   createRun,
   discardPreviews,
+  getOutlookRows,
   getRows,
   getRun,
   latestCommitted,
+  saveOutlook,
 } from "@/src/rankings/store";
-import { ensurePlayers, fetchRotoIndex, type EnsureResult, type RwIndex } from "@/src/rankings/xwalk";
+import {
+  ensurePlayers,
+  fetchRosterTeams,
+  fetchRotoIndex,
+  norm,
+  type EnsureResult,
+  type RwIndex,
+} from "@/src/rankings/xwalk";
 
 // -------------------------------------------------------------- baseline
 
@@ -284,9 +296,36 @@ export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult
     return { ...p, team: mapped ?? p.team };
   });
 
-  // 5. injuries, then the rules
+  // 5. corrections for what the file has gone stale on, then injuries and the rules.
+  //    A traded player keeps his old team forever unless something checks the rosters.
+  const roster = await fetchRosterTeams(idx);
+  const corrections = new Map<string, Correction>();
+  for (const r of baseRows) {
+    const c: Correction = {};
+    const nhlTeam = roster.teams.get(r.statsId);
+    if (nhlTeam) {
+      const fileTeam = teamMap.get(nhlTeam) ?? nhlTeam;
+      if (fileTeam !== r.team) c.team = fileTeam;
+    }
+    const rw = idx.byId.get(r.statsId);
+    if (rw) {
+      const spelled = `${rw.first} ${rw.last}`.trim();
+      if (norm(spelled) !== norm(r.player)) c.name = spelled;
+    }
+    if (c.team !== undefined || c.name !== undefined) corrections.set(r.statsId, c);
+  }
   const inj = await fetchInjuries();
-  const { rows, log } = runRankings({ rows: baseRows, pool, injuries: inj.map, today, windowFrom: from });
+  const { rows, log } = runRankings({
+    rows: baseRows,
+    pool,
+    injuries: inj.map,
+    corrections,
+    today,
+    windowFrom: from,
+  });
+  if (roster.failed.length) {
+    log.notes.push(`Rosters could not be read for ${roster.failed.join(", ")}; those teams' players kept the team already on file.`);
+  }
 
   log.notes.unshift(
     `Window: ${windowIds.length} game(s) not yet counted, ${from} to ${to}. ` +
@@ -316,6 +355,19 @@ export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult
     gameIds: windowIds,
   });
 
+  // 7. the 7- and 14-day outlooks, from the freshly updated rankings. Isolated: a
+  //    failure here must never stop the rankings preview itself.
+  try {
+    const out = await buildOutlooks(rows, today);
+    await saveOutlook(runId, 7, out[7].rows, out[7].log);
+    await saveOutlook(runId, 14, out[14].rows, out[14].log);
+  } catch (e) {
+    const q2 = await sql();
+    const cl = { ...log, notes: [...log.notes, `The outlooks could not be built this time: ${(e as Error).message}`] };
+    await q2`UPDATE rk_runs SET changelog = ${JSON.stringify(cl)}::jsonb WHERE id = ${runId}`;
+    log.notes = cl.notes;
+  }
+
   return {
     runId,
     baseRunId: base.id,
@@ -327,4 +379,38 @@ export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult
     injuryEntries: inj.count,
     changelog: log,
   };
+}
+
+// -------------------------------------------------------------- outlooks
+
+/** Build both outlooks for a set of rankings as of `today` (US Eastern). */
+export async function buildOutlooks(
+  rows: RankRow[],
+  today: string,
+): Promise<Record<7 | 14, { rows: OutlookRow[]; log: OutlookLog }>> {
+  // Standings as of the previous day's close, so a rebuild later the same day
+  // gives the same answer as the run itself.
+  const { stats, teams } = await fetchTeamStats(addIsoDays(today, -1));
+  const schedule = await fetchTeamSchedules(today, addIsoDays(today, 14), teams);
+  return {
+    7: runOutlook({ rows, today, window: 7, schedule, teamStats: stats }),
+    14: runOutlook({ rows, today, window: 14, schedule, teamStats: stats }),
+  };
+}
+
+/**
+ * Outlook rows for a run. A run's own outlook is stored when it is built, so a
+ * committed run's files stay as they were; a run without one (the uploaded
+ * baseline, a restore) gets one computed fresh for today.
+ */
+export async function outlookFor(
+  runId: number,
+  win: 7 | 14,
+): Promise<{ rows: OutlookRow[]; stored: boolean } | null> {
+  const stored = await getOutlookRows(runId, win);
+  if (stored) return { rows: stored, stored: true };
+  const base = await getRows(runId);
+  if (!base.length) return null;
+  const out = await buildOutlooks(base, easternToday());
+  return { rows: out[win].rows, stored: false };
 }

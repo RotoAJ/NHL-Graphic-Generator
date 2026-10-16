@@ -9,6 +9,7 @@
 // (committed = true). Only committing a run marks the games it counted as
 // processed, so previewing is free to repeat and never double-counts.
 import type { Changelog, RankRow } from "@/src/rankings/engine";
+import type { OutlookLog, OutlookRow } from "@/src/rankings/outlook";
 import type { CsvStyle } from "@/src/rankings/csv";
 import { idsJson, num, sql, str } from "@/src/rankings/db";
 
@@ -30,6 +31,8 @@ export interface RunSummary {
 export interface RunDetail extends RunSummary {
   changelog: Changelog | null;
   style: CsvStyle | null;
+  /** The 7- and 14-day outlook logs saved with the run, if any. */
+  outlook: Partial<Record<7 | 14, OutlookLog>> | null;
 }
 
 const iso = (v: unknown): string => (v instanceof Date ? v.toISOString() : str(v));
@@ -128,7 +131,8 @@ export async function getRun(id: number): Promise<RunDetail | null> {
   if (!r) return null;
   const meta = (typeof r.meta === "string" ? JSON.parse(r.meta) : r.meta) as { style?: CsvStyle | null } | null;
   const cl = (typeof r.changelog === "string" ? JSON.parse(r.changelog) : r.changelog) as Changelog | null;
-  return { ...toSummary(r), changelog: cl ?? null, style: meta?.style ?? null };
+  const outlook = await getOutlookLogs(id);
+  return { ...toSummary(r), changelog: cl ?? null, style: meta?.style ?? null, outlook };
 }
 
 export async function latestCommitted(): Promise<RunSummary | null> {
@@ -228,4 +232,61 @@ export async function restoreRun(id: number): Promise<{ ok: true; newRunId: numb
     style: target.style,
   });
   return { ok: true, newRunId: newId };
+}
+
+// ---------------------------------------------------------------- outlooks
+
+/** Save a run's 7- or 14-day outlook, replacing any earlier one for that window. */
+export async function saveOutlook(
+  runId: number,
+  win: 7 | 14,
+  rows: OutlookRow[],
+  log: OutlookLog,
+): Promise<void> {
+  const q = await sql();
+  await q`DELETE FROM rk_outlooks WHERE run_id = ${runId} AND win = ${win}`;
+  const payload = rows.map((r, i) => ({
+    rank: i + 1,
+    stats_id: r.statsId,
+    player: r.player,
+    team: r.team,
+    positions: r.positions,
+    injury: r.injury,
+  }));
+  await q`
+    INSERT INTO rk_outlooks (run_id, win, rank, stats_id, player, team, positions, injury)
+    SELECT ${runId}, ${win}, x.rank, x.stats_id, x.player, x.team, x.positions, x.injury
+      FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
+        AS x(rank int, stats_id text, player text, team text, positions text, injury text)`;
+  await q`
+    INSERT INTO rk_outlook_logs (run_id, win, built_for, log)
+    VALUES (${runId}, ${win}, ${log.today}::date, ${JSON.stringify(log)}::jsonb)
+    ON CONFLICT (run_id, win) DO UPDATE SET built_for = EXCLUDED.built_for, log = EXCLUDED.log`;
+}
+
+/** Stored outlook rows, or null when none was saved for this run and window. */
+export async function getOutlookRows(runId: number, win: 7 | 14): Promise<OutlookRow[] | null> {
+  const q = await sql();
+  const rows = await q`SELECT stats_id, player, team, positions, injury FROM rk_outlooks
+                         WHERE run_id = ${runId} AND win = ${win} ORDER BY rank ASC`;
+  if (!rows.length) return null;
+  return rows.map((r) => ({
+    statsId: str(r.stats_id),
+    player: str(r.player),
+    team: str(r.team),
+    positions: str(r.positions),
+    injury: str(r.injury),
+  }));
+}
+
+export async function getOutlookLogs(runId: number): Promise<Partial<Record<7 | 14, OutlookLog>> | null> {
+  const q = await sql();
+  const rows = await q`SELECT win, log FROM rk_outlook_logs WHERE run_id = ${runId}`;
+  if (!rows.length) return null;
+  const out: Partial<Record<7 | 14, OutlookLog>> = {};
+  for (const r of rows) {
+    const w = num(r.win);
+    if (w === 7 || w === 14) out[w] = (typeof r.log === "string" ? JSON.parse(r.log) : r.log) as OutlookLog;
+  }
+  return out;
 }

@@ -112,6 +112,26 @@ async function migrate(q: Sql): Promise<void> {
     )`;
   await q`CREATE INDEX IF NOT EXISTS rk_players_stats_idx ON rk_players (stats_id)`;
   await q`
+    CREATE TABLE IF NOT EXISTS rk_outlooks (
+      run_id    INTEGER NOT NULL REFERENCES rk_runs(id) ON DELETE CASCADE,
+      win       INTEGER NOT NULL,
+      rank      INTEGER NOT NULL,
+      stats_id  TEXT NOT NULL,
+      player    TEXT NOT NULL,
+      team      TEXT NOT NULL DEFAULT '',
+      positions TEXT NOT NULL DEFAULT '',
+      injury    TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (run_id, win, rank)
+    )`;
+  await q`
+    CREATE TABLE IF NOT EXISTS rk_outlook_logs (
+      run_id   INTEGER NOT NULL REFERENCES rk_runs(id) ON DELETE CASCADE,
+      win      INTEGER NOT NULL,
+      built_for DATE,
+      log      JSONB,
+      PRIMARY KEY (run_id, win)
+    )`;
+  await q`
     CREATE TABLE IF NOT EXISTS rk_run_games (
       run_id  INTEGER NOT NULL REFERENCES rk_runs(id) ON DELETE CASCADE,
       game_id BIGINT NOT NULL,

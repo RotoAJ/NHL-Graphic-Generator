@@ -87,10 +87,22 @@ export interface InjuryEntry {
   returnDate: string | null; // ISO date
 }
 
+/** A fix for a row already on the file: where it disagrees with the authoritative source. */
+export interface Correction {
+  team?: string;
+  name?: string;
+}
+
 export interface EngineInput {
   rows: RankRow[];
   pool: PoolEntry[];
   injuries: Map<string, InjuryEntry>;
+  /**
+   * Corrections keyed by Stats ID: a traded player's new team (from the NHL's own
+   * rosters) and RotoWire's spelling of a name. The skill never updated either,
+   * so a trade left a stale team on the file indefinitely.
+   */
+  corrections?: Map<string, Correction>;
   /** Today in US Eastern, ISO (YYYY-MM-DD). */
   today: string;
   /** First day of the window being processed, ISO. */
@@ -107,6 +119,7 @@ export interface Mover {
 export interface Changelog {
   startCount: number;
   endCount: number;
+  corrections: Array<{ player: string; field: "team" | "name"; from: string; to: string }>;
   removed: Array<{ player: string; reason: string }>;
   added: Array<{
     player: string;
@@ -212,6 +225,7 @@ export function runRankings(input: EngineInput): { rows: RankRow[]; log: Changel
   const log: Changelog = {
     startCount: input.rows.length,
     endCount: 0,
+    corrections: [],
     removed: [],
     added: [],
     heldNoId: [],
@@ -226,12 +240,30 @@ export function runRankings(input: EngineInput): { rows: RankRow[]; log: Changel
     notes: [],
   };
 
+  // ---- Step 0: correct what is demonstrably stale, BEFORE anything else looks at it.
+  // This runs ahead of the blank-team drop so a player whose team is missing but
+  // known from the roster is repaired rather than removed.
+  const fixed: RankRow[] = input.rows.map((r) => {
+    const c = input.corrections?.get(r.statsId);
+    if (!c) return { ...r };
+    const next = { ...r };
+    if (c.team !== undefined && c.team !== r.team) {
+      log.corrections.push({ player: r.player, field: "team", from: r.team || "(blank)", to: c.team });
+      next.team = c.team;
+    }
+    if (c.name !== undefined && c.name !== r.player) {
+      log.corrections.push({ player: r.player, field: "name", from: r.player, to: c.name });
+      next.player = c.name;
+    }
+    return next;
+  });
+
   // ---- Step 1: a blank Team silently breaks every team-based step downstream,
   // so those players are dropped and can re-enter once their team is known.
   let rows: RankRow[] = [];
-  for (const r of input.rows) {
+  for (const r of fixed) {
     if (!r.team.trim()) log.removed.push({ player: r.player, reason: "no team designation" });
-    else rows.push({ ...r });
+    else rows.push(r);
   }
   const N = rows.length;
 

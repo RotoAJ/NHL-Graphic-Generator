@@ -193,6 +193,33 @@ t("output ids are unique", () => {
   assert.equal(new Set(r.rows.map((x) => x.statsId)).size, r.rows.length);
 });
 
+console.log("\ncorrections (stale team / misspelled name)");
+t("team correction is applied and logged", () => {
+  const r = runRankings(base({ corrections: new Map([["1003", { team: "VGK" }]]) }));
+  assert.equal(r.rows.find((x) => x.statsId === "1003").team, "VGK");
+  assert.deepEqual(r.log.corrections, [{ player: "P3", field: "team", from: "NYR", to: "VGK" }]);
+});
+t("name correction is applied and logged", () => {
+  const r = runRankings(base({ corrections: new Map([["1003", { name: "Fixed Name" }]]) }));
+  assert.equal(r.rows.find((x) => x.statsId === "1003").player, "Fixed Name");
+  assert.deepEqual(r.log.corrections, [{ player: "P3", field: "name", from: "P3", to: "Fixed Name" }]);
+});
+t("a correction equal to the current value logs nothing", () => {
+  const r = runRankings(base({ corrections: new Map([["1003", { team: "NYR", name: "P3" }]]) }));
+  assert.equal(r.log.corrections.length, 0);
+});
+t("a blank team repaired by a correction is kept, not dropped", () => {
+  const rows = rowsN(10);
+  rows[2].team = "";
+  const r = runRankings(base({ rows, corrections: new Map([["1003", { team: "BOS" }]]) }));
+  assert.equal(r.rows.find((x) => x.statsId === "1003")?.team, "BOS");
+});
+t("a blank team with no correction is still dropped", () => {
+  const rows = rowsN(10);
+  rows[2].team = "";
+  assert.ok(!runRankings(base({ rows })).rows.some((x) => x.statsId === "1003"));
+});
+
 console.log("\nhelpers");
 t("parseDate accepts ISO, ISO timestamp, M/D/YYYY, M/D/YY", () => {
   assert.equal(parseDate("2026-10-30"), "2026-10-30");

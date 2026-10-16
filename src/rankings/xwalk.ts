@@ -205,6 +205,40 @@ async function seedFromRosters(): Promise<number> {
   return rows.length;
 }
 
+/**
+ * Each active player's CURRENT NHL team, keyed by RotoWire id, read from the 32
+ * team rosters. This is the authority on trades: the rankings file only ever
+ * carried whatever team a player had when he was first entered.
+ *
+ * A roster that fails to load is simply absent from the result -- its players
+ * keep the team already on file rather than being guessed.
+ */
+export async function fetchRosterTeams(idx: RwIndex): Promise<{ teams: Map<string, string>; failed: string[] }> {
+  const teams = new Map<string, string>();
+  const failed: string[] = [];
+  const rosters = await Promise.all(
+    TEAMS.map(async (t) => {
+      try {
+        return { t, r: await nhlJson<Roster>(`/v1/roster/${t}/current`) };
+      } catch {
+        failed.push(t);
+        return { t, r: null };
+      }
+    }),
+  );
+  for (const { t, r } of rosters) {
+    for (const p of [...(r?.forwards ?? []), ...(r?.defensemen ?? []), ...(r?.goalies ?? [])]) {
+      const hit = resolveStatsId(idx, {
+        first: p.firstName?.default ?? "",
+        last: p.lastName?.default ?? "",
+        dob: p.birthDate ?? null,
+      });
+      if (hit.statsId) teams.set(hit.statsId, t);
+    }
+  }
+  return { teams, failed };
+}
+
 export interface EnsureResult {
   seeded: number;
   fetched: number;

@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import type { Changelog } from "@/src/rankings/engine";
+import type { OutlookLog } from "@/src/rankings/outlook";
 import type { RunDetail, RunSummary } from "@/src/rankings/store";
 
 interface State {
@@ -62,6 +63,10 @@ function ChangelogView({ log }: { log: Changelog }) {
         )}
         empty="No one qualified this run."
       />
+      <List
+        title="Corrected (stale team or misspelled name)"
+        items={(log.corrections ?? []).map((c) => `${c.player}: ${c.field} ${c.from} → ${c.to}`)}
+      />
       <List title="Removed" items={log.removed.map((r) => `${r.player} — ${r.reason}`)} />
       <List
         title="Biggest movers up"
@@ -102,6 +107,42 @@ function ChangelogView({ log }: { log: Changelog }) {
         items={log.unmatchedProduction.map((u) => `${u.name} (${u.team}) — ${u.games} game(s)`)}
       />
       <List title="Notes" items={log.notes} />
+    </div>
+  );
+}
+
+function OutlookView({ logs }: { logs: Partial<Record<7 | 14, OutlookLog>> | null }) {
+  if (!logs || (!logs[7] && !logs[14])) return null;
+  return (
+    <div style={{ marginTop: 18 }}>
+      <div className="side-title">Schedule outlooks</div>
+      {([7, 14] as const).map((w) => {
+        const l = logs[w];
+        if (!l) return null;
+        const items = [
+          `Window ${l.today} → ${l.windowEnd}; the league average is ${l.leagueAvgGames.toFixed(2)} games per team.`,
+          `${l.basis.prior.length} team(s) on last season's goals for/against, ${l.basis.current.length} on this season's (switches at 10 games played).`,
+          ...l.notes.filter((n) => !/Prior-season goals/.test(n)),
+          ...(l.teamsWithoutSchedule.length ? [`No schedule found for: ${l.teamsWithoutSchedule.join(", ")}`] : []),
+        ];
+        return (
+          <div key={w} style={{ marginBottom: 6 }}>
+            <List title={`${w}-day outlook — notes`} items={items} />
+            <List
+              title={`${w}-day — left out (not back in time)`}
+              items={l.excluded.map((x) => `${x.player} — returns ${x.returnDate}`)}
+            />
+            <List
+              title={`${w}-day — biggest movers up`}
+              items={l.movers.up.map((m) => `${m.player}: ${m.from} → ${m.to} (${m.reason})`)}
+            />
+            <List
+              title={`${w}-day — biggest movers down`}
+              items={l.movers.down.map((m) => `${m.player}: ${m.from} → ${m.to} (${m.reason})`)}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -230,6 +271,8 @@ export default function RankingsTool() {
             <div className="hint">Games through {state?.through ?? "—"} were already reflected in the starting file.</div>
             <div className="rk-row">
               <a className="download" href="/api/rankings/csv?run=latest">Download CSV</a>
+              <a className="download" href="/api/rankings/outlook?window=7&run=latest">7-Day Outlook CSV</a>
+              <a className="download" href="/api/rankings/outlook?window=14&run=latest">14-Day Outlook CSV</a>
             </div>
           </>
         ) : (
@@ -270,6 +313,7 @@ export default function RankingsTool() {
             Games {preview.windowFrom} to {preview.windowTo} · built {when(preview.createdAt)}
           </div>
           <ChangelogView log={preview.changelog} />
+          <OutlookView logs={preview.outlook} />
           <div className="rk-row">
             <button
               className="copy-btn"
@@ -284,6 +328,8 @@ export default function RankingsTool() {
               Discard
             </button>
             <a className="download" href="/api/rankings/csv?run=preview">Download preview CSV</a>
+            <a className="download" href="/api/rankings/outlook?window=7&run=preview">7-Day Outlook</a>
+            <a className="download" href="/api/rankings/outlook?window=14&run=preview">14-Day Outlook</a>
           </div>
         </div>
       )}
@@ -318,6 +364,8 @@ export default function RankingsTool() {
                       <td>{r.windowFrom && r.windowTo ? `${r.windowFrom} → ${r.windowTo}` : "—"}</td>
                       <td className="rk-actions">
                         <a href={`/api/rankings/csv?run=${r.id}`}>CSV</a>
+                        <a href={`/api/rankings/outlook?window=7&run=${r.id}`}>7d</a>
+                        <a href={`/api/rankings/outlook?window=14&run=${r.id}`}>14d</a>
                         {r.kind !== "baseline" && r.committed && (
                           <button type="button" className="rk-link" onClick={() => toggle(r.id)}>
                             {d ? "Hide" : "Details"}
@@ -343,7 +391,10 @@ export default function RankingsTool() {
                           {d === "loading" ? (
                             <div className="hint">Loading…</div>
                           ) : d.changelog ? (
-                            <ChangelogView log={d.changelog} />
+                            <>
+                              <ChangelogView log={d.changelog} />
+                              <OutlookView logs={d.outlook} />
+                            </>
                           ) : (
                             <div className="hint">{d.note ?? "No details were kept for this run."}</div>
                           )}

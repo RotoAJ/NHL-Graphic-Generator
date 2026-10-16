@@ -23,7 +23,7 @@ globalThis.__RK_SQL = async (strings, ...values) => {
 };
 
 const { parseRankingsCsv, toRankingsCsv } = await import("../src/rankings/csv.ts");
-const { uploadBaseline, buildPreview } = await import("../src/rankings/run.ts");
+const { uploadBaseline, buildPreview, outlookFor } = await import("../src/rankings/run.ts");
 const store = await import("../src/rankings/store.ts");
 const { fetchRotoIndex, resolveStatsId } = await import("../src/rankings/xwalk.ts");
 const { nhlJson } = await import("../src/rankings/games.ts");
@@ -116,6 +116,25 @@ ok("a preview does not mark games processed", (await store.getRun(a.runId)) !== 
   ok("only one preview exists at a time", (await store.listRuns()).filter((r) => !r.committed).length === 1);
 }
 
+// ------------------------------------------------ corrections + outlooks
+console.log("\ncorrections and outlooks");
+ok("corrections are reported in the changelog", Array.isArray(a.changelog.corrections), a.changelog.corrections.length + " corrected");
+ok("every correction has a field, from and to", a.changelog.corrections.every((x) => (x.field === "team" || x.field === "name") && x.from !== x.to));
+const latest = (await store.latestPreview())!;
+const lrun = await store.getRun(latest.id);
+for (const w of [7, 14] as const) {
+  const o = await outlookFor(latest.id, w);
+  ok(w + "-day outlook is saved with the run", !!o && o.stored && o.rows.length > 300, o ? o.rows.length + " rows" : "none");
+  if (o) ok(w + "-day outlook has no duplicate players", new Set(o.rows.map((r) => r.statsId)).size === o.rows.length);
+}
+{
+  const lg = lrun?.outlook?.[7];
+  ok("outlook log records the league average games", !!lg && lg.leagueAvgGames > 0, String(lg?.leagueAvgGames));
+  const { fetchTeamStats } = await import("../src/rankings/schedule.ts");
+  const ts = await fetchTeamStats(TODAY);
+  ok("team stats cover all 32 teams", ts.stats.size === 32, String(ts.stats.size));
+}
+
 // --------------------------------------------------------------- commit
 console.log("\ncommit, history and rollback");
 const preview = (await store.latestPreview())!;
@@ -171,5 +190,3 @@ console.log("\nspot check: hub season totals vs the NHL's own player pages");
 
 console.log(`\n${passed} checks passed${process.exitCode ? " -- WITH FAILURES" : ", 0 failed"}`);
 await pg.close();
-
-
