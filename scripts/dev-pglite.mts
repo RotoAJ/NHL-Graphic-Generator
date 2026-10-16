@@ -4,6 +4,7 @@
 //   npx tsx scripts/dev-pglite.mts          (serves http://localhost:3055)
 //
 // It lives under scripts/, not in the app, so no test scaffolding ships.
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { PGlite } from "@electric-sql/pglite";
@@ -13,7 +14,10 @@ for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
   const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
 }
-process.env.APP_PASSWORD = "dev-local"; // a throwaway local password, so the real sign-in path is exercised
+// A random password per launch, so the real sign-in path is exercised without a
+// password ever being written into the repository. It is printed below.
+const localPassword = randomBytes(6).toString("hex");
+process.env.APP_PASSWORD = localPassword;
 
 const pg = new PGlite();
 globalThis.__RK_SQL = async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -29,4 +33,5 @@ await app.prepare();
 const handle = app.getRequestHandler();
 createServer((req, res) => handle(req, res)).listen(port, () => {
   console.log(`ready on http://localhost:${port} (in-memory database)`);
+  console.log(`local sign-in password for this session: ${localPassword}`);
 });
