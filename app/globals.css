@@ -481,3 +481,18 @@ textarea:focus {
   margin-top: 14px;
   width: 100%;
 }
+
+/* ---- rankings tool ---- */
+.rk-info { color: var(--muted); }
+.rk-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.rk-chips { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 12px; font-size: 14px; }
+.rk-chips span { background: #0e0e12; border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
+.rk-detail { margin: 6px 0; }
+.rk-detail summary { cursor: pointer; padding: 4px 0; }
+.rk-count { color: var(--muted); margin-left: 6px; font-size: 12px; }
+.rk-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rk-table th, .rk-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.rk-table th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.rk-head td { background: #14141a; }
+.rk-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.rk-link { background: none; border: 0; padding: 0; color: var(--accent, #a020f0); cursor: pointer; font: inherit; text-decoration: underline; }

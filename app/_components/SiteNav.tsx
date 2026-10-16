@@ -8,6 +8,7 @@ const TOOLS: Array<{ href: string; label: string }> = [
   { href: "/", label: "Trade / Signing" },
   { href: "/fantasy", label: "Fantasy Hockey" },
   { href: "/goalie-matchup", label: "Goalie Matchup" },
+  { href: "/rankings", label: "Rankings" },
   // Not a generator like the others -- it's the status page for the news feed
   // capture, which is why it reads as a check rather than a tool.
   { href: "/news-import", label: "News Feed" },
