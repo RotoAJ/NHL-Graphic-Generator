@@ -193,6 +193,22 @@ t("output ids are unique", () => {
   assert.equal(new Set(r.rows.map((x) => x.statsId)).size, r.rows.length);
 });
 
+console.log("\nout-for-season players are never inserted");
+t("a strong candidate injured past season end is skipped, logged, and does not use an insertion slot", () => {
+  const pool = [
+    pe(7001, { statsId: "7001", name: "Out Forever", seasonGames: 10, seasonPoints: 30, seasonGoals: 10 }),
+    pe(7002, { statsId: "7002", name: "Healthy One", seasonGames: 10, seasonPoints: 12, seasonGoals: 4 }),
+  ];
+  const r = big(pool, rowsN(340)).log;
+  const injuries = new Map([["7001", { status: "IR-LT", type: "Knee", returnDate: "2027-09-15" }]]);
+  const out = runRankings({ rows: rowsN(340), pool, injuries, ...TODAY });
+  assert.ok(!out.rows.some((x) => x.statsId === "7001"));
+  assert.ok(out.rows.some((x) => x.statsId === "7002"));
+  assert.ok(!out.log.added.some((x) => x.player === "Out Forever"));
+  assert.ok(out.log.removed.some((x) => x.player === "Out Forever" && /not inserted/.test(x.reason)));
+  assert.ok(r.added.some((x) => x.player === "Out Forever")); // sanity: without the feed entry he WOULD be added
+});
+
 console.log("\ncorrections (stale team / misspelled name)");
 t("team correction is applied and logged", () => {
   const r = runRankings(base({ corrections: new Map([["1003", { team: "VGK" }]]) }));

@@ -158,9 +158,11 @@ export default function RankingsTool() {
   const refresh = useCallback(async () => {
     try {
       const r = await fetch("/api/rankings/state");
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error ?? `Failed (${r.status})`);
-      setState(j as State);
+      const text = await r.text();
+      let j: { error?: string } = {};
+      try { j = text ? JSON.parse(text) : {}; } catch { /* not JSON */ }
+      if (!r.ok || !text) throw new Error(j.error ?? `The server returned ${r.status} with ${text ? "an unreadable body" : "no body"}.`);
+      setState(j as unknown as State);
     } catch (e) {
       setError((e as Error).message);
     }

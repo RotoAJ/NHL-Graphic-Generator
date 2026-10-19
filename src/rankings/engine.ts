@@ -324,6 +324,13 @@ export function runRankings(input: EngineInput): { rows: RankRow[]; log: Changel
       : Math.max(RULES.gamesFloorMin, Math.round(p.teamGames * RULES.gamesFloorFraction));
     const season = p.seasonGames >= floor && sRank <= N;
     if (!hot && !season) continue;
+    // Out past the end of the season: never insert them (they would only be removed by Step 5, and would burn
+    // one of the 15 insertion slots and show up as "added" first).
+    const feedRd = p.statsId ? injuries.get(p.statsId)?.returnDate : undefined;
+    if (feedRd && feedRd > RULES.seasonEnd) {
+      log.removed.push({ player: p.name, reason: `not inserted -- return date ${feedRd} beyond season end` });
+      continue;
+    }
     const statRank = season ? sRank : (deltaRank.get(p.nhlId) ?? sRank);
     cands.push({ p, hot, season, statRank });
   }
