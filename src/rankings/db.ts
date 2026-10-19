@@ -38,11 +38,41 @@ export async function sql(): Promise<Sql> {
     if (!cs) throw new Error("No database configured.");
     q = neon(cs) as unknown as Sql;
   }
-  if (!migrated || injected) {
+  if (injected) {
     await migrate(q);
-    migrated = true;
+    return q;
+  }
+  if (!migrated) {
+    // Several queries arrive at once on a cold start; they must share ONE migration, or on a brand-new database
+    // they race to CREATE the same table and Postgres rejects the loser ("duplicate key ... pg_class_relname").
+    migrating ??= migrateWithRetry(q)
+      .then(() => {
+        migrated = true;
+      })
+      .finally(() => {
+        migrating = null;
+      });
+    await migrating;
   }
   return q;
+}
+
+let migrating: Promise<void> | null = null;
+
+/** Another server instance can still be creating the same tables at the same moment: wait and look again. */
+async function migrateWithRetry(q: Sql): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await migrate(q);
+      return;
+    } catch (e) {
+      if (attempt < 4 && /duplicate key|already exists/i.test((e as Error).message)) {
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 async function migrate(q: Sql): Promise<void> {
