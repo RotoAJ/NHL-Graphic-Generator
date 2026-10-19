@@ -19,6 +19,8 @@ import { getProjectedGoalies, type ProjectedGame } from "@/src/goalies/projected
 import {
   claimGame,
   hasDatabase,
+  isResolved,
+  markResolved,
   postedGameIds,
   recordResult,
   releaseGame,
@@ -170,6 +172,7 @@ async function handleGame(
       };
     }
 
+    if (published) markResolved(game.rwGameId);
     return {
       rwGameId: game.rwGameId,
       matchup: label,
@@ -273,8 +276,11 @@ export async function GET(req: Request) {
     }
   }
 
-  const already = dryRun ? new Set<string>() : await postedGameIds();
-  const pending = feed.confirmed.filter((g) => !already.has(g.rwGameId));
+  // Only ask the database when some confirmed game is not already known to be done. With nothing confirmed (most
+  // of the day) or everything already posted, this poll never touches Neon, so it can go to sleep between polls.
+  const unknown = feed.confirmed.filter((g) => !isResolved(g.rwGameId));
+  const already = dryRun || unknown.length === 0 ? new Set<string>() : await postedGameIds();
+  const pending = feed.confirmed.filter((g) => !isResolved(g.rwGameId) && !already.has(g.rwGameId));
 
   const batch = pending.slice(0, MAX_PER_RUN);
   const deferred = pending.length - batch.length;

@@ -19,6 +19,14 @@ export interface PostedRecord {
 
 let migrated = false;
 
+// Games known to be fully resolved (a tweet id, or a recorded dry run). A resolved game never un-resolves, so
+// remembering it for the life of a warm instance is safe, and it lets most polls skip the database entirely --
+// which matters because every query wakes Neon, and a 5-minute poll that always queries keeps it awake all
+// month (that is what used up the free compute allowance).
+const resolvedCache = new Set<string>();
+export const isResolved = (rwGameId: string): boolean => resolvedCache.has(rwGameId);
+export const markResolved = (rwGameId: string): void => void resolvedCache.add(rwGameId);
+
 async function db() {
   const cs = connectionString();
   if (!cs) throw new Error("No database configured");
@@ -56,14 +64,15 @@ export async function postedGameIds(): Promise<Set<string>> {
     // timeout would leave a game claimed forever: never posted, never retried,
     // and silent. Ten minutes is comfortably longer than a full run.
     const rows = (await sql`
-      SELECT rw_game_id FROM posted_matchups
+      SELECT rw_game_id, (tweet_id IS NOT NULL OR dry_run = TRUE) AS resolved FROM posted_matchups
        WHERE posted_at > NOW() - INTERVAL '7 days'
          AND (
            tweet_id IS NOT NULL
            OR dry_run = TRUE
            OR posted_at > NOW() - INTERVAL '10 minutes'
          )
-    `) as Array<{ rw_game_id: string }>;
+    `) as Array<{ rw_game_id: string; resolved: boolean }>;
+    for (const r of rows) if (r.resolved) resolvedCache.add(r.rw_game_id);
     return new Set(rows.map((r) => r.rw_game_id));
   } catch {
     // A read failure must not cause a re-post, so fail closed by pretending
