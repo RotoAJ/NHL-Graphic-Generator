@@ -10,7 +10,11 @@ import type { FeaturedStore } from "@/src/fantasy/featured";
 import type { FeaturedRecord, ThreadType } from "@/src/fantasy/types";
 
 export function connectionString(): string | null {
+  // HUB2_* is the replacement database (the first one ran out of Neon's free monthly compute). It wins when
+  // present, so switching is just connecting the new database -- nobody has to copy a connection string around.
   return (
+    process.env.HUB2_DATABASE_URL ??
+    process.env.HUB2_POSTGRES_URL ??
     process.env.DATABASE_URL ??
     process.env.POSTGRES_URL ??
     process.env.POSTGRES_PRISMA_URL ??
