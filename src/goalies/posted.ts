@@ -164,3 +164,21 @@ export async function recentPosts(limit = 20): Promise<PostedRecord[]> {
       typeof r.posted_at === "string" ? r.posted_at : r.posted_at.toISOString(),
   }));
 }
+
+/**
+ * Record a game as already posted without posting it -- used once, after moving to a fresh database, so games
+ * that were already on the timeline are not posted a second time. Stored as a resolved dry run, which is what
+ * the poller treats as "done". Returns false if the game already had a row.
+ */
+export async function seedPosted(rwGameId: string, matchup: string): Promise<boolean> {
+  if (!hasDatabase()) throw new Error("No database configured");
+  const sql = await db();
+  const rows = (await sql`
+    INSERT INTO posted_matchups (rw_game_id, matchup, dry_run)
+    VALUES (${rwGameId}, ${matchup + " (seeded: already posted)"}, TRUE)
+    ON CONFLICT (rw_game_id) DO NOTHING
+    RETURNING id
+  `) as Array<{ id: number }>;
+  markResolved(rwGameId);
+  return rows.length > 0;
+}
