@@ -208,7 +208,7 @@ function learnTeamMap(rows: RankRow[], pool: PoolEntry[], nhlTeamOf: Map<number,
 
 function displayName(idx: RwIndex, statsId: string | null, fallback: string): string {
   const p = statsId ? idx.byId.get(statsId) : undefined;
-  return p ? `${p.first} ${p.last}`.replace(/s+/g, " ").trim() : fallback; // RotoWire has e.g. "Spencer " + "Martin"
+  return p ? `${p.first} ${p.last}`.replace(/\s+/g, " ").trim() : fallback; // RotoWire has e.g. "Spencer " + "Martin"
 }
 
 export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult> {
