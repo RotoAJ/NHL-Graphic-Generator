@@ -244,6 +244,18 @@ export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult
   }
 
   const windowIds = await windowGameIds(from, to, through);
+  // The label shows the first day that actually has an uncounted game. `from` is only where the SEARCH starts
+  // (the day after the baseline); games already counted by a committed run are skipped, so after a commit
+  // the label used to read like a repeat ("10-16 to 10-20") even though only the newer games were counted.
+  const firstGameDay =
+    windowIds.length > 0
+      ? str(
+          (
+            await (await sql())`SELECT to_char(MIN(game_date), 'YYYY-MM-DD') AS d FROM rk_games
+                                 WHERE game_id IN (SELECT jsonb_array_elements_text(${idsJson(windowIds)}::jsonb)::bigint)`
+          )[0]?.d,
+        )
+      : from;
 
   // 2. identities for everyone who has played
   const q = await sql();
@@ -328,7 +340,7 @@ export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult
   }
 
   log.notes.unshift(
-    `Window: ${windowIds.length} game(s) not yet counted, ${from} to ${to}. ` +
+    `Window: ${windowIds.length} game(s) not yet counted, ${firstGameDay} to ${to}. ` +
       `Injury feed: ${inj.count} entries. Players resolved to RotoWire ids: ${players.resolved} new, ${players.unresolved} unresolved.`,
   );
   if (ingest.failed > 0) {
@@ -347,7 +359,7 @@ export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult
     kind: "run",
     committed: false,
     baseRunId: base.id,
-    windowFrom: from,
+    windowFrom: firstGameDay,
     windowTo: to,
     rows,
     changelog: log,
@@ -371,7 +383,7 @@ export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult
   return {
     runId,
     baseRunId: base.id,
-    windowFrom: from,
+    windowFrom: firstGameDay,
     windowTo: to,
     gamesInWindow: windowIds.length,
     ingest,
