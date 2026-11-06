@@ -247,15 +247,18 @@ export async function buildPreview(opts: BuildOptions = {}): Promise<BuildResult
   // The label shows the first day that actually has an uncounted game. `from` is only where the SEARCH starts
   // (the day after the baseline); games already counted by a committed run are skipped, so after a commit
   // the label used to read like a repeat ("10-16 to 10-20") even though only the newer games were counted.
-  const firstGameDay =
+  // Two statements on purpose: writing the sql() call inline, directly in front of the template literal, is
+  // miscompiled by the production minifier into "await await sql()`...`", which calls a Promise and throws
+  // "... is not a function". It only fails in the built app, never under the tests.
+  const labelQ = await sql();
+  const firstRow =
     windowIds.length > 0
-      ? str(
-          (
-            await (await sql())`SELECT to_char(MIN(game_date), 'YYYY-MM-DD') AS d FROM rk_games
-                                 WHERE game_id IN (SELECT jsonb_array_elements_text(${idsJson(windowIds)}::jsonb)::bigint)`
-          )[0]?.d,
-        )
-      : from;
+      ? (
+          await labelQ`SELECT to_char(MIN(game_date), 'YYYY-MM-DD') AS d FROM rk_games
+                        WHERE game_id IN (SELECT jsonb_array_elements_text(${idsJson(windowIds)}::jsonb)::bigint)`
+        )[0]
+      : undefined;
+  const firstGameDay = firstRow?.d ? str(firstRow.d) : from;
 
   // 2. identities for everyone who has played
   const q = await sql();

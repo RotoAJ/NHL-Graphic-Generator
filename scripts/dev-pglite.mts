@@ -28,7 +28,9 @@ globalThis.__RK_SQL = async (strings: TemplateStringsArray, ...values: unknown[]
 };
 
 const port = Number(process.env.PORT ?? 3055);
-const app = next({ dev: true, port });
+// PROD_BUILD=1 serves the already-built production bundle (run `npm run build` first) instead of dev mode, to
+// reproduce errors that only exist in the minified build.
+const app = next({ dev: process.env.PROD_BUILD !== "1", port });
 await app.prepare();
 const handle = app.getRequestHandler();
 createServer((req, res) => handle(req, res)).listen(port, () => {
