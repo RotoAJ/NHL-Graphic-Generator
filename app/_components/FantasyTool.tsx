@@ -201,6 +201,13 @@ export default function FantasyTool() {
             <CardGrid list={data.stars} type="stars" />
           </div>
 
+          {data.sleepers.length > 0 && (
+            <div className="panel" style={{ marginTop: 20 }}>
+              <div className="side-title">Sleepers — cards</div>
+              <CardGrid list={data.sleepers} type="sleepers" />
+            </div>
+          )}
+
           {data.drops?.length > 0 && (
             <>
               <div style={{ marginTop: 20 }}>
@@ -211,13 +218,6 @@ export default function FantasyTool() {
                 <CardGrid list={data.drops} type="drops" />
               </div>
             </>
-          )}
-
-          {data.sleepers.length > 0 && (
-            <div className="panel" style={{ marginTop: 20 }}>
-              <div className="side-title">Sleepers — cards</div>
-              <CardGrid list={data.sleepers} type="sleepers" />
-            </div>
           )}
 
           <div className="panel" style={{ marginTop: 20 }}>
