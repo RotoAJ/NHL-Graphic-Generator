@@ -50,5 +50,5 @@ export function dropsThread(r: SelectionResult): string {
     (f, i) =>
       `${i + 1}. ${f.fullName} (${f.position} — ${f.teamAbbr}) — ${dropStatLine(f)} · ${f.fantasyPoints.toFixed(1)} FP`,
   );
-  return [head, "", ...body, "", "Consider moving on if you need the roster spot."].join("\n");
+  return [head, "", ...body].join("\n");
 }
