@@ -1,7 +1,7 @@
 // Domain types for the Fantasy Hockey tool.
 
 export type PosGroup = "F" | "D" | "G";
-export type ThreadType = "stars" | "sleepers";
+export type ThreadType = "stars" | "sleepers" | "drops";
 
 /** Raw aggregated production over the trailing window, keyed by NHL player id. */
 export interface PlayerWeek {
@@ -44,11 +44,17 @@ export interface Finalist extends PlayerWeek {
   actionShotUrl: string | null;
   /** League-wide roster percentage, when available. */
   ownership: number | null;
+  /** Length of the window the stats cover; set to 14 for drop candidates (default 7). */
+  windowDays?: number;
 }
 
 export interface SelectionResult {
   stars: Finalist[];
   sleepers: Finalist[];
+  /** "Time to Cut Bait": widely rostered players in a two-week slump. */
+  drops: Finalist[];
+  /** The two-week window the drops cover. */
+  dropWindow: { from: string; to: string };
   /** Non-fatal problems worth surfacing in the UI. */
   warnings: string[];
   window: { from: string; to: string };

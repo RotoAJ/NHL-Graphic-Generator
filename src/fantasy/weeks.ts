@@ -15,7 +15,9 @@ export interface WeeklySet {
   window: { from: string; to: string };
   stars: Finalist[];
   sleepers: Finalist[];
-  threads: { stars: string; sleepers: string };
+  /** Absent on weeks saved before Time to Cut Bait existed. */
+  drops?: Finalist[];
+  threads: { stars: string; sleepers: string; drops?: string };
   warnings: string[];
   createdAt: string;
 }

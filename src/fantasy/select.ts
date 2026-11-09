@@ -12,20 +12,12 @@ import {
   type OwnershipProvider,
 } from "@/src/fantasy/ownership";
 import { positionLabel } from "@/src/fantasy/scoring";
+import { MAX_PER_GROUP, PICK, pickWithDiversity } from "@/src/fantasy/diversity";
+import { DROP_TIERS, dropCandidates, pickDrops, type DropTier } from "@/src/fantasy/drops";
 import type { Finalist, PlayerWeek, PosGroup, SelectionResult } from "@/src/fantasy/types";
 
 export const OWNERSHIP_CEILING = 50; // "under-rostered" threshold
 
-/**
- * Diversity caps per set of 3.
- *
- * Goalies are capped at 1: save-volume scoring means goalies structurally
- * out-earn skaters over a week, so an uncapped list reliably returned two
- * goalies in the top three (observed with real 2025-26 data). One goalie keeps
- * the post readable as a skater story.
- */
-const MAX_PER_GROUP: Record<PosGroup, number> = { F: 2, D: 2, G: 1 };
-const PICK = 3;
 const TOP_POOL = 15; // spec: top 15 by fantasy points feeds the Stars pick
 const SLEEPER_POOL = 60; // wider pool to score under-rostered candidates from
 const REFINE_POOL = 90; // players whose PP points are looked up exactly
@@ -61,66 +53,12 @@ function normalize(v: number, min: number, max: number): number {
   return ((v - min) / (max - min)) * 100;
 }
 
-/**
- * Take `n` players, allowing at most `maxPerGroup` from any position group.
- * If the cap makes `n` unreachable it relaxes rather than returning short --
- * we'd rather post 3 forwards than 2 players, and the caller is warned.
- */
-function pickWithDiversity(
-  candidates: PlayerWeek[],
-  n = PICK,
-  caps: Record<PosGroup, number> = MAX_PER_GROUP,
-  maxPerTeam = 2,
-): { picked: PlayerWeek[]; relaxed: boolean; relaxedTeam: boolean } {
-  const posCount: Record<PosGroup, number> = { F: 0, D: 0, G: 0 };
-  const teamCount = new Map<string, number>();
-  const picked: PlayerWeek[] = [];
+function shiftDays(iso: string, days: number): string {
+  return new Date(new Date(`${iso}T00:00:00Z`).getTime() + days * 86400000).toISOString().slice(0, 10);
+}
 
-  const take = (c: PlayerWeek) => {
-    picked.push(c);
-    posCount[c.posGroup]++;
-    teamCount.set(c.teamAbbr, (teamCount.get(c.teamAbbr) ?? 0) + 1);
-  };
-
-  // Strict: honour both the position and team caps.
-  for (const c of candidates) {
-    if (picked.length === n) break;
-    if (posCount[c.posGroup] >= caps[c.posGroup]) continue;
-    if ((teamCount.get(c.teamAbbr) ?? 0) >= maxPerTeam) continue;
-    take(c);
-  }
-
-  let relaxedTeam = false;
-  let relaxed = false;
-
-  // Relax the TEAM cap first -- two players from one club reads better than two
-  // goalies or an unfilled slot.
-  if (picked.length < n) {
-    for (const c of candidates) {
-      if (picked.length === n) break;
-      if (picked.includes(c)) continue;
-      if (posCount[c.posGroup] >= caps[c.posGroup]) continue;
-      relaxedTeam = true;
-      take(c);
-    }
-  }
-
-  // Then relax positions, still keeping goalies last so the one-goalie rule is
-  // never silently undone.
-  if (picked.length < n) {
-    relaxed = true;
-    for (const pass of [0, 1] as const) {
-      for (const c of candidates) {
-        if (picked.length === n) break;
-        if (picked.includes(c)) continue;
-        if (pass === 0 && c.posGroup === "G") continue;
-        take(c);
-      }
-      if (picked.length === n) break;
-    }
-  }
-
-  return { picked, relaxed, relaxedTeam };
+function describeTier(t: DropTier): string {
+  return `${t.minOwn}%+ rostered, skaters ≤${t.skaterBar} and goalies ≤${t.goalieBar} fantasy points per game`;
 }
 
 async function enrich(
@@ -167,6 +105,8 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
     return {
       stars: [],
       sleepers: [],
+      drops: [],
+      dropWindow: window,
       window,
       warnings: [
         `No completed NHL games between ${window.from} and ${window.to}. ` +
@@ -309,6 +249,51 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
     warnings.push(`No candidates under ${OWNERSHIP_CEILING}% rostered.`);
   }
 
+  // ---------- Time to Cut Bait: widely rostered players in a two-week slump ----------
+  let dropFinalists: Finalist[] = [];
+  let dropWindow = window;
+  if (!provider || !provider.isReal) {
+    warnings.push("Cut Bait withheld — real ownership data is unavailable.");
+  } else {
+    try {
+      const prev = await getWeekProduction(shiftDays(opts.endDate, -7));
+      dropWindow = { from: prev.window.from, to: window.to };
+      const everyone = [...players, ...prev.players];
+      const own = await provider.get(
+        [...new Map(everyone.map((x) => [x.playerId, x])).values()].map((x) => ({
+          playerId: x.playerId,
+          shortName: x.shortName,
+          teamAbbr: x.teamAbbr,
+        })),
+      );
+      // Exact power-play points and shutouts, only for people who could actually qualify.
+      const floor = Math.min(...DROP_TIERS.map((t) => t.minOwn));
+      const toRefine = (ps: PlayerWeek[]) =>
+        ps.filter((x) => !x.ppExact && (own.get(x.playerId) ?? 0) >= floor);
+      await refineExactStats(toRefine(players), window);
+      await refineExactStats(toRefine(prev.players), prev.window);
+
+      const cands = dropCandidates(players, prev.players, own).filter((c) => passes(c.combined));
+      const pick = pickDrops(cands);
+      if (pick.picked.length < PICK) {
+        warnings.push(
+          `Cut Bait: only ${pick.picked.length} of ${PICK} players met even the loosest standard (${describeTier(pick.tier)}).`,
+        );
+      } else if (pick.tierIndex > 0) {
+        warnings.push(
+          `Cut Bait: the standard (${describeTier(DROP_TIERS[0])}) found too few players, so it was loosened to ${describeTier(pick.tier)}.`,
+        );
+      }
+      if (pick.relaxedTeam) warnings.push("Cut Bait: one-per-team cap relaxed to fill three players.");
+      if (pick.relaxed) warnings.push("Cut Bait: position-diversity cap relaxed to fill three players.");
+      dropFinalists = await Promise.all(
+        pick.picked.map(async (c) => ({ ...(await enrich(c.combined, c.own)), windowDays: 14 })),
+      );
+    } catch (e) {
+      warnings.push(`Cut Bait skipped (${(e as Error).message}).`);
+    }
+  }
+
   // ---------- enrich only the finalists ----------
   const stars = await Promise.all(
     starPick.picked.map((p) => enrich(p, ownershipMap.get(p.playerId) ?? null)),
@@ -318,11 +303,11 @@ export async function selectPlayers(opts: SelectOptions): Promise<SelectionResul
   );
 
   // Day-to-day players survived the filter; flag them so a human can judge.
-  for (const f of [...stars, ...sleepers]) {
+  for (const f of [...stars, ...sleepers, ...dropFinalists]) {
     if (injuries.dayToDay.has(initialKeyFromFull(f.firstName, f.lastName))) {
       warnings.push(`${f.fullName} is listed day-to-day — verify before posting.`);
     }
   }
 
-  return { stars, sleepers, window, warnings };
+  return { stars, sleepers, drops: dropFinalists, dropWindow, window, warnings };
 }

@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   const store = getFeaturedStore();
   await store.add(
     players.map((p) =>
-      makeRecord(p.playerId, p.fullName, p.position, p.threadType === "sleepers" ? "sleepers" : "stars"),
+      makeRecord(p.playerId, p.fullName, p.position, p.threadType === "sleepers" || p.threadType === "drops" ? p.threadType : "stars"),
     ),
   );
   return NextResponse.json({ ok: true, added: players.length, persistent: store.persistent });

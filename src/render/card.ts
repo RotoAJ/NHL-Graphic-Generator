@@ -337,7 +337,8 @@ export async function renderFantasyCard(
   ctx.font = `36px ${HEAVY}`;
   ctx.textAlign = "left";
   let ly = nameY + nameSize * 0.85 + 128;
-  for (const line of ["LAST 7 DAYS", "FANTASY POINTS"]) {
+  const windowLine = f.windowDays === 14 ? "LAST 14 DAYS" : "LAST 7 DAYS";
+  for (const line of [windowLine, "FANTASY POINTS"]) {
     ctx.fillText(line, PAD, ly);
     ly += 40;
   }
@@ -371,11 +372,13 @@ export async function renderFantasyCard(
   // secondary line
   ctx.fillStyle = WHITE;
   const secondary =
-    threadType === "sleepers" && f.ownership !== null
-      ? `${f.ownership}% ROSTERED`
-      : threadType === "sleepers"
-        ? "UNDER-ROSTERED"
-        : "THREE STARS OF THE WEEK";
+    threadType === "drops"
+      ? "CONSIDER MOVING ON"
+      : threadType === "sleepers" && f.ownership !== null
+        ? `${f.ownership}% ROSTERED`
+        : threadType === "sleepers"
+          ? "UNDER-ROSTERED"
+          : "THREE STARS OF THE WEEK";
   const secSize = fitText(ctx, secondary, BOLD, 44, maxW, 26);
   ctx.font = `${secSize}px ${BOLD}`;
   ctx.fillText(secondary, PAD, bandY + 196);

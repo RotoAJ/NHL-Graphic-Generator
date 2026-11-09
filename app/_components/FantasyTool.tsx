@@ -9,7 +9,8 @@ interface GenerateResponse {
   warnings: string[];
   stars: Finalist[];
   sleepers: Finalist[];
-  threads: { stars: string; sleepers: string };
+  drops: Finalist[];
+  threads: { stars: string; sleepers: string; drops: string };
   error?: string;
 }
 
@@ -30,6 +31,7 @@ export default function FantasyTool() {
     const jobs: Array<[ThreadType, Finalist]> = [
       ...res.stars.map((p) => ["stars", p] as [ThreadType, Finalist]),
       ...res.sleepers.map((p) => ["sleepers", p] as [ThreadType, Finalist]),
+      ...(res.drops ?? []).map((p) => ["drops", p] as [ThreadType, Finalist]),
     ];
     const out: CardMap = {};
     await Promise.all(
@@ -83,6 +85,7 @@ export default function FantasyTool() {
           window: data.window,
           stars: data.stars,
           sleepers: data.sleepers,
+          drops: data.drops,
           threads: data.threads,
           warnings: data.warnings,
         }),
@@ -197,6 +200,18 @@ export default function FantasyTool() {
             <div className="side-title">Three Stars — cards</div>
             <CardGrid list={data.stars} type="stars" />
           </div>
+
+          {data.drops?.length > 0 && (
+            <>
+              <div style={{ marginTop: 20 }}>
+                <CopyBox title="Time to Cut Bait" text={data.threads.drops} />
+              </div>
+              <div className="panel" style={{ marginTop: 20 }}>
+                <div className="side-title">Time to Cut Bait — cards</div>
+                <CardGrid list={data.drops} type="drops" />
+              </div>
+            </>
+          )}
 
           {data.sleepers.length > 0 && (
             <div className="panel" style={{ marginTop: 20 }}>

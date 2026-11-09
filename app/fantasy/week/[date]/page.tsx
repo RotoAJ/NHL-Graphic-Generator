@@ -93,6 +93,7 @@ export default async function WeekPage({
       <div className="matchup-grid">
         <CopyBox title="Three Stars of the Week" text={set.threads.stars} />
         <CopyBox title="Sleepers to Grab" text={set.threads.sleepers} />
+        {set.threads.drops ? <CopyBox title="Time to Cut Bait" text={set.threads.drops} /> : null}
       </div>
 
       <div className="panel" style={{ marginTop: 20 }}>
@@ -104,6 +105,13 @@ export default async function WeekPage({
         <div className="side-title">Sleepers — cards</div>
         <CardRow week={set.weekEnd} list={set.sleepers} type="sleepers" />
       </div>
+
+      {set.drops && set.drops.length > 0 && (
+        <div className="panel" style={{ marginTop: 20 }}>
+          <div className="side-title">Time to Cut Bait — cards</div>
+          <CardRow week={set.weekEnd} list={set.drops} type="drops" />
+        </div>
+      )}
 
       <div className="panel" style={{ marginTop: 20 }}>
         <Link className="download" href="/fantasy">

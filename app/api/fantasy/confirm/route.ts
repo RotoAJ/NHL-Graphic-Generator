@@ -10,7 +10,8 @@ interface Body {
   window?: { from: string; to: string };
   stars?: Finalist[];
   sleepers?: Finalist[];
-  threads?: { stars: string; sleepers: string };
+  drops?: Finalist[];
+  threads?: { stars: string; sleepers: string; drops?: string };
   warnings?: string[];
 }
 
@@ -33,7 +34,8 @@ export async function POST(req: Request) {
   }
   const stars = body.stars ?? [];
   const sleepers = body.sleepers ?? [];
-  if (!stars.length && !sleepers.length) {
+  const drops = body.drops ?? [];
+  if (!stars.length && !sleepers.length && !drops.length) {
     return NextResponse.json({ error: "nothing to confirm" }, { status: 400 });
   }
 
@@ -42,6 +44,7 @@ export async function POST(req: Request) {
     window: body.window ?? { from: weekEnd, to: weekEnd },
     stars,
     sleepers,
+    drops,
     threads: body.threads ?? { stars: "", sleepers: "" },
     warnings: body.warnings ?? [],
     createdAt: new Date().toISOString(),
@@ -53,11 +56,12 @@ export async function POST(req: Request) {
     await store.add([
       ...stars.map((p) => makeRecord(p.playerId, p.fullName, p.position, "stars")),
       ...sleepers.map((p) => makeRecord(p.playerId, p.fullName, p.position, "sleepers")),
+      ...drops.map((p) => makeRecord(p.playerId, p.fullName, p.position, "drops")),
     ]);
     return NextResponse.json({
       ok: true,
       permalink: `/fantasy/week/${weekEnd}`,
-      recorded: stars.length + sleepers.length,
+      recorded: stars.length + sleepers.length + drops.length,
       store: store.name,
       persistent: store.persistent,
     });

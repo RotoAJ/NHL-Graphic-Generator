@@ -15,8 +15,8 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const week = (url.searchParams.get("week") ?? "").trim();
   const playerId = (url.searchParams.get("playerId") ?? "").trim();
-  const threadType: ThreadType =
-    url.searchParams.get("type") === "sleepers" ? "sleepers" : "stars";
+  const t = url.searchParams.get("type");
+  const threadType: ThreadType = t === "sleepers" || t === "drops" ? t : "stars";
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week) || !playerId) {
     return NextResponse.json({ error: "week and playerId are required" }, { status: 400 });
@@ -26,7 +26,8 @@ export async function GET(req: Request) {
   if (!set) {
     return NextResponse.json({ error: `No saved set for ${week}` }, { status: 404 });
   }
-  const list = threadType === "sleepers" ? set.sleepers : set.stars;
+  const list =
+    threadType === "sleepers" ? set.sleepers : threadType === "drops" ? (set.drops ?? []) : set.stars;
   const player = list.find((p) => p.playerId === playerId);
   if (!player) {
     return NextResponse.json({ error: "Player not in that set" }, { status: 404 });
@@ -68,7 +69,8 @@ export async function POST(req: Request) {
   if (!p || !p.playerId || !p.firstName || !p.lastName) {
     return NextResponse.json({ error: "player is required" }, { status: 400 });
   }
-  const threadType: ThreadType = body.threadType === "sleepers" ? "sleepers" : "stars";
+  const threadType: ThreadType =
+    body.threadType === "sleepers" || body.threadType === "drops" ? body.threadType : "stars";
 
   try {
     const png = await renderFantasyCard(p, threadType);

@@ -36,3 +36,19 @@ export function sleepersThread(r: SelectionResult): string {
   });
   return [head, "", ...body].join("\n");
 }
+
+/** Two-week stat line; the window is longer than the other posts, so it says so. */
+function dropStatLine(f: Finalist): string {
+  if (f.posGroup === "G") return `${f.wins}W, ${f.saves} SV, ${f.goalsAgainst} GA in ${f.games} GP`;
+  return `${f.goals}G ${f.assists}A in ${f.games} GP`;
+}
+
+/** No % rostered here on purpose -- the point is the slump, not the audience. */
+export function dropsThread(r: SelectionResult): string {
+  const head = `Fantasy Hockey — Time to Cut Bait 🎣 (last 2 weeks, ${prettyDate(r.dropWindow.from)}–${prettyDate(r.dropWindow.to)})`;
+  const body = r.drops.map(
+    (f, i) =>
+      `${i + 1}. ${f.fullName} (${f.position} — ${f.teamAbbr}) — ${dropStatLine(f)} · ${f.fantasyPoints.toFixed(1)} FP`,
+  );
+  return [head, "", ...body, "", "Consider moving on if you need the roster spot."].join("\n");
+}

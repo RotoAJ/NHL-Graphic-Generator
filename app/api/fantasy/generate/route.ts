@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { selectPlayers } from "@/src/fantasy/select";
-import { sleepersThread, starsThread } from "@/src/fantasy/threads";
+import { dropsThread, sleepersThread, starsThread } from "@/src/fantasy/threads";
 
 export const runtime = "nodejs";
 // A full week is ~60 box-score fetches on a cold cache.
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -34,9 +34,12 @@ export async function GET(req: Request) {
       warnings: result.warnings,
       stars: result.stars,
       sleepers: result.sleepers,
+      drops: result.drops,
+      dropWindow: result.dropWindow,
       threads: {
         stars: starsThread(result),
         sleepers: sleepersThread(result),
+        drops: result.drops.length ? dropsThread(result) : "",
       },
     });
   } catch (err) {

@@ -109,7 +109,7 @@ export const postgresStore: FeaturedStore = {
         playerId: r.player_id,
         playerName: r.player_name,
         position: r.position,
-        threadType: (r.thread_type === "sleepers" ? "sleepers" : "stars") as ThreadType,
+        threadType: (r.thread_type === "sleepers" || r.thread_type === "drops" ? r.thread_type : "stars") as ThreadType,
         featuredOn: toISO(r.featured_on),
       }),
     );

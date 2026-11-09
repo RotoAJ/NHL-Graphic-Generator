@@ -3,7 +3,7 @@ import { cronAuthorized } from "@/src/x/auth";
 import { getFeaturedStore, makeRecord } from "@/src/fantasy/featured";
 import { selectPlayers } from "@/src/fantasy/select";
 import { postMessage, slackConfigured, uploadCard } from "@/src/fantasy/slack";
-import { sleepersThread, starsThread } from "@/src/fantasy/threads";
+import { dropsThread, sleepersThread, starsThread } from "@/src/fantasy/threads";
 import { loadWeek, saveWeek } from "@/src/fantasy/weeks";
 import { renderFantasyCard } from "@/src/render/card";
 import type { Finalist, ThreadType } from "@/src/fantasy/types";
@@ -86,9 +86,13 @@ export async function GET(req: Request) {
 
   try {
     const result = await selectPlayers({ endDate, ignoreRecency });
-    const threads = { stars: starsThread(result), sleepers: sleepersThread(result) };
+    const threads = {
+      stars: starsThread(result),
+      sleepers: sleepersThread(result),
+      drops: result.drops.length ? dropsThread(result) : "",
+    };
 
-    if (!result.stars.length && !result.sleepers.length) {
+    if (!result.stars.length && !result.sleepers.length && !result.drops.length) {
       return NextResponse.json({
         posted: false,
         reason: "No qualifying players (no completed games in the window?)",
@@ -111,6 +115,7 @@ export async function GET(req: Request) {
         window: result.window,
         stars: result.stars,
         sleepers: result.sleepers,
+        drops: result.drops,
         threads,
         warnings: result.warnings,
         createdAt: new Date().toISOString(),
@@ -120,6 +125,7 @@ export async function GET(req: Request) {
         ...result.sleepers.map((p) =>
           makeRecord(p.playerId, p.fullName, p.position, "sleepers"),
         ),
+        ...result.drops.map((p) => makeRecord(p.playerId, p.fullName, p.position, "drops")),
       ]);
     }
 
@@ -128,7 +134,7 @@ export async function GET(req: Request) {
         posted: false,
         dryRun,
         saved: !dryRun,
-        recorded: dryRun ? 0 : result.stars.length + result.sleepers.length,
+        recorded: dryRun ? 0 : result.stars.length + result.sleepers.length + result.drops.length,
         permalink,
         slackConfigured: slackConfigured(),
         store: store.name,
@@ -138,6 +144,7 @@ export async function GET(req: Request) {
         threads,
         stars: result.stars.map((p) => p.fullName),
         sleepers: result.sleepers.map((p) => p.fullName),
+        drops: result.drops.map((p) => p.fullName),
       });
     }
 
@@ -145,11 +152,12 @@ export async function GET(req: Request) {
     const header =
       `*Fantasy Hockey — week of ${result.window.from} to ${result.window.to}*\n` +
       (result.warnings.length ? `\n_Notes: ${result.warnings.join(" · ")}_\n` : "");
-    const ts = await postMessage(`${header}\n${threads.stars}\n\n${threads.sleepers}`);
+    const ts = await postMessage(`${header}\n${threads.stars}\n\n${threads.sleepers}${threads.drops ? `\n\n${threads.drops}` : ""}`);
 
     const jobs: Array<[ThreadType, Finalist]> = [
       ...result.stars.map((p) => ["stars", p] as [ThreadType, Finalist]),
       ...result.sleepers.map((p) => ["sleepers", p] as [ThreadType, Finalist]),
+      ...result.drops.map((p) => ["drops", p] as [ThreadType, Finalist]),
     ];
     const uploaded: string[] = [];
     for (const [threadType, player] of jobs) {
@@ -158,7 +166,7 @@ export async function GET(req: Request) {
         await uploadCard(
           `${threadType}-${player.lastName.toLowerCase()}.png`,
           png,
-          `${player.fullName} — ${threadType === "stars" ? "Three Stars" : "Sleeper"}`,
+          `${player.fullName} — ${threadType === "stars" ? "Three Stars" : threadType === "drops" ? "Cut Bait" : "Sleeper"}`,
           ts,
         );
         uploaded.push(player.fullName);
